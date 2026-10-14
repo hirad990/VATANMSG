@@ -657,7 +657,7 @@ function api_get_messages(): never
 
     if ($beforeId && $beforeId > 0) {
         $stmt = api_db()->prepare(
-            'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at
+            'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at, m.edited_at
              FROM messages m JOIN users u ON u.id = m.sender_id
              WHERE m.conversation_id = ? AND m.id < ? AND m.deleted_at IS NULL
              ORDER BY m.id DESC LIMIT ' . $limit
@@ -683,6 +683,7 @@ function api_get_messages(): never
             'displayName' => $row['display_name'],
             'body' => $row['body'],
             'createdAt' => $row['created_at'],
+            'editedAt' => $row['edited_at'] ?? null,
         ];
     }
     api_response(['messages' => $messages]);

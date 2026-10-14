@@ -93,7 +93,7 @@ type Room = { id: string; title: string; subtitle: string; icon: string; kind: '
 const COPY = {
   fa: {
     brand: 'وطن', tagline: 'ارتباط، نزدیک‌تر از همیشه', search: 'جست‌وجوی پیام‌ها و افراد',
-    chats: 'گفت‌وگوها', contacts: 'مخاطبین', groups: 'گروه‌ها', channels: 'کانال‌ها', saved: 'پیام‌های ذخیره‌شده', settings: 'تنظیمات',
+    chats: 'گفت‌وگوها', contacts: 'مخاطبین', groups: 'گروه‌ها', channels: 'کانال‌ها', savedTab: 'پیام‌های ذخیره‌شده', settings: 'تنظیمات',
     welcome: 'سلام، خوش اومدی 👋', overview: 'همه ارتباطاتت، یک‌جا',
     recent: 'گفت‌وگوهای اخیر', seeAll: 'مشاهده همه', online: 'آنلاین', today: 'امروز',
     emptyTitle: 'اینجا هنوز خبری نیست', emptyBody: 'با ساختن یک گروه یا کانال، شروع کن.',
@@ -111,7 +111,7 @@ const COPY = {
   },
   en: {
     brand: 'Vatan', tagline: 'Closer, wherever you are', search: 'Search messages and people',
-    chats: 'Chats', contacts: 'Contacts', groups: 'Groups', channels: 'Channels', saved: 'Saved messages', settings: 'Settings',
+    chats: 'Chats', contacts: 'Contacts', groups: 'Groups', channels: 'Channels', savedTab: 'Saved messages', settings: 'Settings',
     welcome: 'Hello, welcome back 👋', overview: 'All your conversations, in one place',
     recent: 'Recent chats', seeAll: 'See all', online: 'Online', today: 'Today',
     emptyTitle: 'It’s quiet here for now', emptyBody: 'Start by creating a group or channel.',
@@ -836,7 +836,7 @@ function AppContent() {
       clearInterval(timer);
     };
   }, [modal, apiToken, activeRoom?.id]);
-  const labelForTab = (x: Tab) => t[x];
+  const labelForTab = (x: Tab) => x === 'saved' ? t.savedTab : t[x as Exclude<Tab, 'saved'>];
   const canManageGroup = groupMembers.some(member => member.id === userId && ['owner', 'admin'].includes(member.role));
   const groupAccent = ({ violet: '#5B52E8', blue: '#2878E8', green: '#159A73', rose: '#E34E86', amber: '#D98B16', midnight: '#202B45', ocean: '#008DA8' } as Record<string, string>)[groupSettings?.themeKey ?? 'violet'] ?? c.primary;
 

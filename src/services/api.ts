@@ -29,7 +29,7 @@ export type VatanMessage = {
 
 type AuthResponse = { token: string; user: VatanUser };
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_VATAN_API_URL || 'https://binercraft.ir/api').replace(/\/$/, '');
+const API_BASE_URL = 'https://binercraft.ir/api';
 
 export class VatanApiError extends Error {
   constructor(message: string, public readonly status: number) {

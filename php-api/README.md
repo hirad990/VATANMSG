@@ -69,6 +69,6 @@ For an existing cPanel/MariaDB database, run this one-time migration in phpMyAdm
 ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL AFTER username;
 ```
 
-The app now uses `POST /auth/register` and `POST /auth/login`. Passwords are stored with PHP's `password_hash()` and checked with `password_verify()`; the API never returns password hashes. The old `/auth/demo` endpoint is disabled. Existing demo accounts have no password hash, so they cannot sign in with a password; register a new username unless an administrator securely provisions a password for the existing account.
+The app now uses `POST /auth/register` and `POST /auth/login`. Passwords are stored with PHP's `password_hash()` and checked with `password_verify()`; the API never returns password hashes. Mobile sessions are stored using OS-backed secure storage; the web build uses browser local storage. Set `token_expiry_days` in the host's `config.php` to `90` (or another value up to 365) to control how long a saved session remains valid. The old `/auth/demo` endpoint is disabled. Existing demo accounts have no password hash, so they cannot sign in with a password; register a new username unless an administrator securely provisions a password for the existing account.
 
 Messages are saved in MariaDB. Members of a group can read its shared history, and the app polls for new messages and conversation membership. This is periodic REST refresh, not instant WebSocket delivery.

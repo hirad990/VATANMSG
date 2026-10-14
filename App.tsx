@@ -40,6 +40,7 @@ async function registerPushForSession(token: string): Promise<void> {
 }
 
 const SESSION_KEY = 'vatanmsg.session.v1';
+const ROOM_PREFS_KEY = 'vatanmsg.roomprefs.v1';
 
 async function readSavedSession(): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -163,6 +164,9 @@ function AppContent() {
   const [messageReactions, setMessageReactions] = useState<Record<string, { reaction: string; count: number }[]>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [chatFilter, setChatFilter] = useState<'all' | 'direct' | 'group' | 'channel' | 'pinned'>('all');
+  const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
+  const [roomPrefsReady, setRoomPrefsReady] = useState(false);
 
   const t = COPY[lang];
   const dark = theme === 'dark';
@@ -174,6 +178,39 @@ function AppContent() {
     border: '#E7EAF2', primary: '#5B52E8', soft: '#EFEEFF', input: '#F6F7FB'
   };
   const isRTL = lang === 'fa';
+
+  useEffect(() => {
+    let cancelled = false;
+    const restoreRoomPreferences = async () => {
+      try {
+        const raw = Platform.OS === 'web'
+          ? (typeof localStorage === 'undefined' ? null : localStorage.getItem(ROOM_PREFS_KEY))
+          : await SecureStore.getItemAsync(ROOM_PREFS_KEY);
+        if (!cancelled && raw) {
+          const parsed: unknown = JSON.parse(raw);
+          if (Array.isArray(parsed)) setPinnedRoomIds(parsed.filter((id): id is string => typeof id === 'string'));
+        }
+      } catch { /* Preferences are optional; never block opening chats. */ }
+      finally { if (!cancelled) setRoomPrefsReady(true); }
+    };
+    void restoreRoomPreferences();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!roomPrefsReady) return;
+    const persistRoomPreferences = async () => {
+      try {
+        const value = JSON.stringify(pinnedRoomIds);
+        if (Platform.OS === 'web') {
+          if (typeof localStorage !== 'undefined') localStorage.setItem(ROOM_PREFS_KEY, value);
+        } else {
+          await SecureStore.setItemAsync(ROOM_PREFS_KEY, value);
+        }
+      } catch { /* A storage failure must not affect messaging. */ }
+    };
+    void persistRoomPreferences();
+  }, [pinnedRoomIds, roomPrefsReady]);
 
   useEffect(() => {
     Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
@@ -205,7 +242,17 @@ function AppContent() {
     const timer = setInterval(() => { void refreshConversations(); }, 8000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [apiToken, lang]);
-  const filteredChats = useMemo(() => rooms.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [rooms, search]);
+  const filteredChats = useMemo(() => rooms
+    .filter(room => (room.title + ' ' + room.subtitle).toLowerCase().includes(search.toLowerCase()))
+    .filter(room => chatFilter === 'all' || (chatFilter === 'pinned' ? pinnedRoomIds.includes(room.id) : room.kind === chatFilter))
+    .sort((a, b) => Number(pinnedRoomIds.includes(b.id)) - Number(pinnedRoomIds.includes(a.id))),
+    [rooms, search, chatFilter, pinnedRoomIds]);
+
+  const togglePinnedRoom = (room: Room) => {
+    setPinnedRoomIds(previous => previous.includes(room.id)
+      ? previous.filter(id => id !== room.id)
+      : [room.id, ...previous]);
+  };
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);
   const pickPhoto = async () => {
@@ -709,52 +756,101 @@ function AppContent() {
 
   
 
-  const renderRoom = (room: Room) => (
-    <Pressable key={room.id} onPress={() => openRoom(room)} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
-      <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : '#EC4899'} />
+  const renderRoom = (room: Room) => {
+    const pinned = pinnedRoomIds.includes(room.id);
+    return <Pressable key={room.id} onPress={() => openRoom(room)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
+      style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, paddingHorizontal: 8, borderRadius: 16, backgroundColor: pinned ? c.soft + '66' : 'transparent' }]}>
+      <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} />
       <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-        <Text style={[styles.chatTitle, { color: c.text }]}>{room.title}</Text>
+        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
+          <Text numberOfLines={1} style={[styles.chatTitle, { color: c.text, flexShrink: 1 }]}>{room.title}</Text>
+          {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
+        </View>
         <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={c.muted} />
-    </Pressable>
-  );
+      <Pressable accessibilityRole="button" accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
+        onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>
+        <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={17} color={pinned ? c.primary : c.muted} />
+      </Pressable>
+    </Pressable>;
+  };
 
-  const renderHome = () => (
-    <>
-      <Animated.View style={[styles.hero, { backgroundColor: dark ? '#211E4A' : '#EAE9FF', opacity: heroMotion, transform: [{ translateY: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }]}>
-        <Animated.View style={[styles.heroGlow, { backgroundColor: c.primary, opacity: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.13] }), transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
-        <Text style={[styles.heroEyebrow, { color: c.primary }]}>{t.brand.toUpperCase()} · {t.demo}</Text>
-        <Text style={[styles.heroTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{t.welcome}</Text>
-        <Text style={[styles.heroSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{t.overview}</Text>
-        <View style={[styles.heroButtons, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-          <Pressable onPress={() => { setModal('group'); setRoomName(''); }} style={[styles.primaryButton, { backgroundColor: c.primary }]}>
-            <Ionicons name="people-outline" size={17} color="#FFF" /><Text style={styles.primaryButtonText}>{t.createGroup}</Text>
-          </Pressable>
-          <Pressable onPress={() => { setModal('channel'); setRoomName(''); }} style={[styles.secondaryButton, { backgroundColor: c.surface }]}>
-            <Ionicons name="megaphone-outline" size={17} color={c.primary} /><Text style={[styles.secondaryButtonText, { color: c.primary }]}>{t.createChannel}</Text>
-          </Pressable>
+  const renderHome = () => {
+    const filters: { key: 'all' | 'direct' | 'group' | 'channel' | 'pinned'; label: string; icon: any }[] = [
+      { key: 'all', label: lang === 'fa' ? 'همه' : 'All chats', icon: 'chatbubbles-outline' },
+      { key: 'direct', label: lang === 'fa' ? 'شخصی' : 'Private', icon: 'person-outline' },
+      { key: 'group', label: t.groups, icon: 'people-outline' },
+      { key: 'channel', label: t.channels, icon: 'megaphone-outline' },
+      { key: 'pinned', label: lang === 'fa' ? 'سنجاق‌شده' : 'Pinned', icon: 'pin-outline' }
+    ];
+    const pinnedCount = rooms.filter(room => pinnedRoomIds.includes(room.id)).length;
+    return <>
+      <View style={[styles.inboxIntro, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <Text style={[styles.inboxEyebrow, { color: c.primary }]}>{lang === 'fa' ? 'پیام‌رسان شما' : 'YOUR MESSENGER'}</Text>
+          <Text style={[styles.inboxTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'گفت‌وگوها' : 'Messages'}</Text>
+          <Text style={[styles.inboxSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'همه ارتباطاتت، مرتب و یک‌جا' : 'Every conversation, neatly in one place'}</Text>
         </View>
-      </Animated.View>
-      <View style={[styles.searchBox, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-        <Ionicons name="search" size={19} color={c.muted} />
+        <Pressable onPress={() => setTab('contacts')} style={[styles.newChatFab, { backgroundColor: c.primary }]} accessibilityRole="button">
+          <Ionicons name="create-outline" size={22} color="#FFFFFF" />
+        </Pressable>
+      </View>
+
+      <View style={[styles.searchBox, styles.inboxSearch, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <Ionicons name="search" size={19} color={c.primary} />
         <TextInput value={search} onChangeText={setSearch} placeholder={t.search} placeholderTextColor={c.muted} style={[styles.searchInput, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]} />
         {!!search && <Pressable onPress={() => setSearch('')}><Ionicons name="close-circle" size={18} color={c.muted} /></Pressable>}
       </View>
-      <SectionTitle title={t.recent} action={t.seeAll} />
-      <View style={[styles.listCard, { backgroundColor: c.surface }]}>
-        {filteredChats.map(renderRoom)}
-        {filteredChats.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{t.emptyTitle}</Text>}
-      </View>
-      <View style={[styles.infoStrip, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-        <Ionicons name="shield-checkmark-outline" size={22} color={c.primary} />
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.infoTitle, { color: c.text }]}>{lang === 'fa' ? 'وطن، در حال ساخته‌شدن' : 'Vatan is taking shape'}</Text>
-          <Text style={[styles.infoText, { color: c.muted }]}>{t.backend}</Text>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4, paddingBottom: 15 }}>
+        {filters.map(filter => {
+          const active = chatFilter === filter.key;
+          return <Pressable key={filter.key} onPress={() => setChatFilter(filter.key)}
+            style={[styles.inboxFilter, { backgroundColor: active ? c.primary : c.surface, borderColor: active ? c.primary : c.border, flexDirection: 'row', gap: 6 }]}>
+            <Ionicons name={filter.icon} size={15} color={active ? '#FFFFFF' : c.muted} />
+            <Text style={{ color: active ? '#FFFFFF' : c.muted, fontSize: 11, fontWeight: '800' }}>{filter.label}</Text>
+            {filter.key === 'pinned' && pinnedCount > 0 && <View style={[styles.filterCount, { backgroundColor: active ? '#FFFFFF33' : c.soft }]}><Text style={{ color: active ? '#FFFFFF' : c.primary, fontSize: 9, fontWeight: '900' }}>{pinnedCount}</Text></View>}
+          </Pressable>;
+        })}
+      </ScrollView>
+
+      {pinnedCount > 0 && chatFilter === 'all' && !search && <View style={{ marginBottom: 16 }}>
+        <View style={[styles.sectionRow, { flexDirection: isRTL ? 'row-reverse' : 'row', marginBottom: 9 }]}>
+          <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 7 }}>
+            <Ionicons name="pin" size={15} color={c.primary} />
+            <Text style={[styles.inboxSectionTitle, { color: c.text }]}>{lang === 'fa' ? 'گفت‌وگوهای سنجاق‌شده' : 'Pinned chats'}</Text>
+          </View>
+          <Pressable onPress={() => setChatFilter('pinned')}><Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{lang === 'fa' ? 'همه' : 'View all'}</Text></Pressable>
         </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 3 }}>
+          {rooms.filter(room => pinnedRoomIds.includes(room.id)).map(room => <Pressable key={room.id} onPress={() => openRoom(room)} style={[styles.pinnedTile, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={44} />
+            <Text numberOfLines={1} style={{ color: c.text, fontSize: 11, fontWeight: '800', maxWidth: 100, marginTop: 7, textAlign: 'center' }}>{room.title}</Text>
+            <Text numberOfLines={1} style={{ color: c.muted, fontSize: 9, marginTop: 3, maxWidth: 100 }}>{room.kind === 'group' ? (lang === 'fa' ? 'گروه' : 'Group') : room.kind === 'channel' ? (lang === 'fa' ? 'کانال' : 'Channel') : (lang === 'fa' ? 'شخصی' : 'Private')}</Text>
+          </Pressable>)}
+        </ScrollView>
+      </View>}
+
+      <View style={[styles.sectionRow, { flexDirection: isRTL ? 'row-reverse' : 'row', marginBottom: 10 }]}>
+        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={[styles.inboxSectionTitle, { color: c.text }]}>{chatFilter === 'pinned' ? (lang === 'fa' ? 'سنجاق‌شده‌ها' : 'Pinned chats') : chatFilter === 'group' ? t.groups : chatFilter === 'channel' ? t.channels : chatFilter === 'direct' ? (lang === 'fa' ? 'گفت‌وگوهای شخصی' : 'Private chats') : t.recent}</Text>
+          <View style={[styles.filterCount, { backgroundColor: c.soft }]}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '900' }}>{filteredChats.length}</Text></View>
+        </View>
+        <Pressable onPress={() => setModal('group')} style={[styles.smallAction, { backgroundColor: c.soft }]}><Ionicons name="people-outline" size={15} color={c.primary} /><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800' }}>{lang === 'fa' ? 'گروه جدید' : 'New group'}</Text></Pressable>
       </View>
-    </>
-  );
+
+      <View style={[styles.inboxList, { backgroundColor: c.surface, borderColor: c.border }]}>
+        {filteredChats.map(renderRoom)}
+        {filteredChats.length === 0 && <View style={{ alignItems: 'center', paddingVertical: 36, paddingHorizontal: 18 }}>
+          <View style={[styles.emptyIllustration, { backgroundColor: c.soft }]}><Ionicons name={search ? 'search-outline' : chatFilter === 'pinned' ? 'pin-outline' : 'chatbubbles-outline'} size={28} color={c.primary} /></View>
+          <Text style={{ color: c.text, fontSize: 14, fontWeight: '900', marginTop: 12 }}>{search ? (lang === 'fa' ? 'چیزی پیدا نشد' : 'No matches found') : chatFilter === 'pinned' ? (lang === 'fa' ? 'هنوز گفت‌وگویی سنجاق نکردی' : 'No pinned chats yet') : t.emptyTitle}</Text>
+          <Text style={{ color: c.muted, fontSize: 11, textAlign: 'center', lineHeight: 18, marginTop: 5 }}>{search ? (lang === 'fa' ? 'عبارت دیگری را امتحان کن.' : 'Try another search term.') : chatFilter === 'pinned' ? (lang === 'fa' ? 'با زدن سنجاق کنار هر گفتگو، آن را اینجا نگه دار.' : 'Tap the pin beside a chat to keep it here.') : t.emptyBody}</Text>
+          {!search && chatFilter === 'all' && <Pressable onPress={() => setTab('contacts')} style={[styles.primaryButton, { backgroundColor: c.primary, marginTop: 14 }]}><Ionicons name="person-add-outline" size={16} color="#FFFFFF" /><Text style={styles.primaryButtonText}>{lang === 'fa' ? 'پیدا کردن مخاطب' : 'Find people'}</Text></Pressable>}
+        </View>}
+      </View>
+      <Text style={[styles.inboxHint, { color: c.muted }]}>{lang === 'fa' ? 'برای سنجاق یا برداشتن سنجاق، دکمهٔ سنجاق کنار گفتگو را بزن.' : 'Use the pin beside a chat to keep it at the top.'}</Text>
+    </>;
+  };
 
   const renderCollection = (kind: 'group' | 'channel') => {
     const list = rooms.filter(x => x.kind === kind);
@@ -1090,6 +1186,20 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  inboxIntro: { alignItems: 'center', gap: 14, paddingTop: 4, paddingBottom: 18 },
+  inboxEyebrow: { fontSize: 9, fontWeight: '900', letterSpacing: 1.5, marginBottom: 5 },
+  inboxTitle: { fontSize: 28, fontWeight: '900', letterSpacing: -0.5 },
+  inboxSubtitle: { fontSize: 11, marginTop: 4, lineHeight: 17 },
+  newChatFab: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center', shadowColor: '#5B52E8', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 5 },
+  inboxSearch: { marginBottom: 12, borderRadius: 17, height: 48 },
+  inboxFilter: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, alignItems: 'center' },
+  filterCount: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
+  inboxSectionTitle: { fontSize: 14, fontWeight: '900' },
+  pinnedTile: { width: 116, minHeight: 112, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 12 },
+  smallAction: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 8 },
+  inboxList: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
+  emptyIllustration: { width: 60, height: 60, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  inboxHint: { textAlign: 'center', fontSize: 10, lineHeight: 16, marginTop: 10, marginBottom: 4 },
   bottomNav: { minHeight: 78, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 14 : 9, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#172033', shadowOpacity: 0.07, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 12 },
   navItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 15 },
   navIconWrap: { width: 44, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

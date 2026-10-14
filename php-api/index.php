@@ -271,7 +271,7 @@ function api_message_by_id(int $id): array
         'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
         'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
         'clientMessageId' => $row['client_message_id'] ?? null, 'body' => $row['body'],
-        'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at'], 'attachments' => api_message_attachments((int)$row['id'])
+        'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at'], 'attachments' => api_message_attachments((int)$row['id']), 'readCount' => api_message_receipt_counts((int)$row['id'])['readCount'], 'deliveredCount' => api_message_receipt_counts((int)$row['id'])['deliveredCount']
     ];
 }
 
@@ -789,7 +789,9 @@ function api_send_message(): never
         'clientMessageId' => $row['client_message_id'] ?? null,
         'body' => $row['body'],
         'createdAt' => $row['created_at'],
-        'attachments' => api_message_attachments((int)$row['id'])
+        'attachments' => api_message_attachments((int)$row['id']),
+        'readCount' => api_message_receipt_counts((int)$row['id'])['readCount'],
+        'deliveredCount' => api_message_receipt_counts((int)$row['id'])['deliveredCount']
     ]], 201);
 }
 
@@ -838,7 +840,9 @@ function api_get_messages(): never
             'body' => $row['body'],
             'createdAt' => $row['created_at'],
             'editedAt' => $row['edited_at'] ?? null,
-            'attachments' => api_message_attachments((int)$row['id'])
+            'attachments' => api_message_attachments((int)$row['id']),
+            'readCount' => api_message_receipt_counts((int)$row['id'])['readCount'],
+            'deliveredCount' => api_message_receipt_counts((int)$row['id'])['deliveredCount']
         ];
     }
     api_response(['messages' => $messages]);
@@ -1065,6 +1069,15 @@ function api_dispatch_push_notification(int $conversationId, int $senderId, stri
     $response = curl_exec($ch);
     if ($response === false) error_log('VatanMSG push dispatch failed: ' . curl_error($ch));
     curl_close($ch);
+}
+
+
+function api_message_receipt_counts(int $messageId): array
+{
+    $stmt = api_db()->prepare('SELECT SUM(read_at IS NOT NULL) AS read_count, SUM(delivered_at IS NOT NULL) AS delivered_count FROM message_receipts WHERE message_id = ?');
+    $stmt->execute([$messageId]);
+    $row = $stmt->fetch() ?: [];
+    return ['readCount' => (int)($row['read_count'] ?? 0), 'deliveredCount' => (int)($row['delivered_count'] ?? 0)];
 }
 
 function api_message_attachments(int $messageId): array

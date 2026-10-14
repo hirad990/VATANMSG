@@ -20,3 +20,8 @@ ALTER TABLE messages
 
 -- This index is optional if a similar index already exists.
 CREATE INDEX idx_api_tokens_expiry ON api_tokens (expires_at);
+
+
+-- Add password-based accounts for VATANMSG. Run once on an existing database.
+ALTER TABLE users
+    ADD COLUMN password_hash VARCHAR(255) NULL AFTER username;

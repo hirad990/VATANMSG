@@ -1,10 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
 import { createChannel, createGroup, getMessages, listConversations, loginDemo, sendMessage, updateMyProfile, type VatanMessage } from './src/services/api';
+
+
+function Text(props: React.ComponentProps<typeof NativeText>) {
+  const flattened = StyleSheet.flatten(props.style);
+  const weight = flattened?.fontWeight;
+  const fontFamily = weight === '900' ? 'Vazirmatn_900Black'
+    : weight === '800' ? 'Vazirmatn_800ExtraBold'
+    : weight === '700' || weight === 'bold' ? 'Vazirmatn_700Bold'
+    : weight === '600' ? 'Vazirmatn_600SemiBold'
+    : weight === '500' ? 'Vazirmatn_500Medium'
+    : 'Vazirmatn_400Regular';
+  return <NativeText {...props} style={[{ fontFamily }, props.style]} />;
+}
 
 type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
@@ -51,6 +64,7 @@ const COPY = {
 };
 
 function AppContent() {
+  const [fontsLoaded] = useFonts({ Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black });
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [tab, setTab] = useState<Tab>('chats');

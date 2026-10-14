@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "پیام‌رسان وطن",
+    "slug": "vatanmsg",
+    "scheme": "vatanmsg",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ir.vatanmsg.app"
+    },
+    "android": {
+      "package": "ir.vatanmsg.app",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Vatan to choose a profile photo.",
+          "cameraPermission": "Allow Vatan to take a profile photo."
+        }
+      ]
+    ]
+  }
+}

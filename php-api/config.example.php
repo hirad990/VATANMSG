@@ -11,6 +11,6 @@ return [
     'db_user' => 'CPANEL_DB_USER',
     'db_pass' => 'CHANGE_ME',
     'demo_login_enabled' => true,
-    'token_expiry_days' => 7,
+    'token_expiry_days' => 90,
     'max_message_length' => 4000,
 ];

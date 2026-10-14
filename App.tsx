@@ -3,6 +3,7 @@ import { Alert, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Press
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
 import { createChannel, createGroup, getMessages, listConversations, loginDemo, sendMessage, updateMyProfile, type VatanMessage } from './src/services/api';
 
 type Language = 'fa' | 'en';

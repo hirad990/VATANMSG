@@ -270,7 +270,7 @@ function api_message_by_id(int $id): array
         'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
         'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
         'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null, 'body' => $row['body'],
-        'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at']
+        'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at'], 'attachments' => api_message_attachments((int)$row['id'])
     ];
 }
 
@@ -786,6 +786,7 @@ function api_send_message(): never
         'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
         'body' => $row['body'],
         'createdAt' => $row['created_at'],
+        'attachments' => api_message_attachments((int)$row['id'])
     ]], 201);
 }
 
@@ -834,6 +835,7 @@ function api_get_messages(): never
             'body' => $row['body'],
             'createdAt' => $row['created_at'],
             'editedAt' => $row['edited_at'] ?? null,
+            'attachments' => api_message_attachments((int)$row['id'])
         ];
     }
     api_response(['messages' => $messages]);
@@ -1000,6 +1002,111 @@ function api_transfer_conversation_ownership(): never
 }
 
 
+
+function api_message_attachments(int $messageId): array
+{
+    $stmt = api_db()->prepare('SELECT id, original_name, mime_type, size_bytes, created_at FROM message_attachments WHERE message_id = ? ORDER BY id ASC');
+    $stmt->execute([$messageId]);
+    $items = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $items[] = [
+            'id' => (string)$row['id'],
+            'name' => $row['original_name'],
+            'mimeType' => $row['mime_type'],
+            'sizeBytes' => (int)$row['size_bytes'],
+            'url' => 'https://binercraft.ir/api/media/download?id=' . (string)$row['id'],
+            'createdAt' => $row['created_at']
+        ];
+    }
+    return $items;
+}
+
+function api_upload_media(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $conversationId = filter_var($_POST['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$conversationId || $conversationId < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+    $membership = api_require_membership((int)$conversationId, (int)$user['id']);
+    if ($membership['type'] === 'channel' && !in_array($membership['role'], ['owner','admin'], true)) {
+        api_response(['error' => 'Only channel admins can upload media'], 403);
+    }
+    if (!isset($_FILES['file']) || !is_array($_FILES['file'])) api_response(['error' => 'Choose a file to upload'], 422);
+    $file = $_FILES['file'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) {
+        api_response(['error' => 'Upload failed. Check the hosting upload size limit.'], 400);
+    }
+    $size = (int)($file['size'] ?? 0);
+    if ($size < 1 || $size > 25 * 1024 * 1024) api_response(['error' => 'Files must be between 1 byte and 25 MB'], 413);
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->file((string)$file['tmp_name']);
+    $extensions = [
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
+        'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov',
+        'application/pdf' => 'pdf', 'text/plain' => 'txt', 'application/zip' => 'zip',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx'
+    ];
+    if (!isset($extensions[$mime])) api_response(['error' => 'This file type is not allowed'], 415);
+    $originalName = trim(basename((string)($file['name'] ?? 'file')));
+    $originalName = mb_substr(preg_replace('/[\x00-\x1F\x7F]/u', '', $originalName) ?: 'file', 0, 255);
+    $storageDir = __DIR__ . '/uploads';
+    if (!is_dir($storageDir) && !mkdir($storageDir, 0750, true) && !is_dir($storageDir)) {
+        api_response(['error' => 'Upload storage is unavailable on the host'], 500);
+    }
+    $denyFile = $storageDir . '/.htaccess';
+    if (!is_file($denyFile)) file_put_contents($denyFile, "Require all denied\nDeny from all\n");
+    $storedName = bin2hex(random_bytes(24)) . '.' . $extensions[$mime];
+    $destination = $storageDir . '/' . $storedName;
+    if (!move_uploaded_file((string)$file['tmp_name'], $destination)) api_response(['error' => 'Could not save uploaded file'], 500);
+    @chmod($destination, 0640);
+
+    $pdo = api_db();
+    $pdo->beginTransaction();
+    try {
+        $messageBody = '📎 ' . $originalName;
+        $stmt = $pdo->prepare('INSERT INTO messages (conversation_id, sender_id, body) VALUES (?, ?, ?)');
+        $stmt->execute([$conversationId, $user['id'], $messageBody]);
+        $messageId = (int)$pdo->lastInsertId();
+        $stmt = $pdo->prepare('INSERT INTO message_attachments (message_id, uploader_id, storage_path, original_name, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$messageId, $user['id'], $storedName, $originalName, $mime, $size]);
+        $attachmentId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        @unlink($destination);
+        throw $e;
+    }
+    $message = api_message_by_id($messageId);
+    api_response(['success' => true, 'message' => $message, 'attachment' => api_message_attachments($messageId)[0]], 201);
+}
+
+function api_download_media(): never
+{
+    api_method('GET');
+    $user = api_user();
+    $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid attachment id required'], 422);
+    $stmt = api_db()->prepare(
+        'SELECT a.storage_path, a.original_name, a.mime_type, a.size_bytes, m.conversation_id
+         FROM message_attachments a JOIN messages m ON m.id = a.message_id WHERE a.id = ? LIMIT 1'
+    );
+    $stmt->execute([$id]);
+    $attachment = $stmt->fetch();
+    if (!$attachment) api_response(['error' => 'File not found'], 404);
+    api_require_membership((int)$attachment['conversation_id'], (int)$user['id']);
+    $base = realpath(__DIR__ . '/uploads');
+    $path = realpath(__DIR__ . '/uploads/' . basename((string)$attachment['storage_path']));
+    if (!$base || !$path || !str_starts_with($path, $base . DIRECTORY_SEPARATOR) || !is_file($path)) api_response(['error' => 'File not found'], 404);
+    header('Content-Type: ' . $attachment['mime_type']);
+    header('Content-Length: ' . (string)$attachment['size_bytes']);
+    header('X-Content-Type-Options: nosniff');
+    header('Content-Disposition: attachment; filename="' . str_replace(['"', "\\", "\r", "\n"], '_', (string)$attachment['original_name']) . '"');
+    readfile($path);
+    exit;
+}
+
 function api_search_messages(): never
 {
     api_method('GET');
@@ -1149,6 +1256,12 @@ try {
             break;
         case 'conversations/transfer-ownership':
             api_transfer_conversation_ownership();
+            break;
+        case 'media/upload':
+            api_upload_media();
+            break;
+        case 'media/download':
+            api_download_media();
             break;
         case 'messages/search':
             api_search_messages();

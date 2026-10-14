@@ -26,6 +26,8 @@ export type VatanMessage = {
   editedAt?: string | null;
   username: string;
   displayName: string;
+  avatarUrl?: string | null;
+  replyToId?: string | null;
 };
 
 type AuthResponse = { token: string; user: VatanUser };
@@ -93,7 +95,9 @@ function normalizeMessage(value: any): VatanMessage {
     createdAt: String(value.createdAt ?? value.created_at ?? ''),
     editedAt: value.editedAt ?? value.edited_at ?? null,
     username: String(value.username ?? ''),
-    displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? '')
+    displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? ''),
+    avatarUrl: value.avatarUrl ?? value.avatar_url ?? null,
+    replyToId: value.replyToId == null && value.reply_to_id == null ? null : String(value.replyToId ?? value.reply_to_id)
   };
 }
 
@@ -230,3 +234,65 @@ export async function deleteMessage(token: string, messageId: string): Promise<v
   });
 }
 
+
+
+export type VatanGroupSettings = {
+  id: string;
+  title: string;
+  description: string | null;
+  avatarUrl: string | null;
+  themeKey: string;
+  themeMode: 'light' | 'dark' | 'system';
+  memberCanSend: boolean;
+  memberCanInvite: boolean;
+  memberCanPin: boolean;
+  slowModeSeconds: number;
+};
+
+export type VatanMember = VatanUser & { role: 'owner' | 'admin' | 'member' | 'subscriber' };
+
+export async function getConversationMembers(token: string, conversationId: string): Promise<{ members: VatanMember[] }> {
+  const result = await request<{ members: any[] }>(`/conversations/members?id=${encodeURIComponent(conversationId)}`, token);
+  return { members: (result.members ?? []).map(member => ({
+    id: String(member.id), username: String(member.username ?? ''),
+    displayName: String(member.displayName ?? member.display_name ?? ''),
+    avatarUrl: member.avatarUrl ?? member.avatar_url ?? null,
+    role: member.role
+  })) };
+}
+
+export async function updateConversationSettings(token: string, conversationId: string, settings: Partial<Omit<VatanGroupSettings, 'id'>>): Promise<VatanGroupSettings> {
+  const result = await request<{ settings: any }>('/conversations/manage', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ conversation_id: Number(conversationId), ...settings })
+  });
+  return result.settings as VatanGroupSettings;
+}
+
+export async function removeConversationMember(token: string, conversationId: string, userId: string): Promise<void> {
+  await request('/conversations/remove-member', token, { method: 'POST', body: JSON.stringify({ conversation_id: Number(conversationId), user_id: Number(userId) }) });
+}
+
+export async function setConversationMemberRole(token: string, conversationId: string, userId: string, role: 'admin' | 'member'): Promise<void> {
+  await request('/conversations/member-role', token, { method: 'PATCH', body: JSON.stringify({ conversation_id: Number(conversationId), user_id: Number(userId), role }) });
+}
+
+export async function transferConversationOwnership(token: string, conversationId: string, userId: string): Promise<void> {
+  await request('/conversations/transfer-ownership', token, { method: 'POST', body: JSON.stringify({ conversation_id: Number(conversationId), user_id: Number(userId) }) });
+}
+
+export async function toggleMessageReaction(token: string, messageId: string, reaction: string) {
+  return request<{ success: boolean; active: boolean; reactions: { reaction: string; count: number }[] }>('/messages/react', token, {
+    method: 'POST', body: JSON.stringify({ message_id: Number(messageId), reaction })
+  });
+}
+
+export async function markMessagesRead(token: string, conversationId: string, lastMessageId: string): Promise<void> {
+  await request('/messages/read', token, {
+    method: 'POST', body: JSON.stringify({ conversation_id: Number(conversationId), last_message_id: Number(lastMessageId) })
+  });
+}
+
+export async function logoutAllSessions(token: string): Promise<void> {
+  await request('/auth/logout-all', token, { method: 'POST', body: '{}' });
+}

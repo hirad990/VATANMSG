@@ -1000,7 +1000,7 @@ function AppContent() {
                           <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}
-                        <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}{message.editedAt ? (lang === 'fa' ? ' · ویرایش‌شده' : ' · edited') : ''}{message.status === 'sending' ? (lang === 'fa' ? ' · در حال ارسال…' : ' · sending…') : message.status === 'failed' ? (lang === 'fa' ? ' · ارسال ناموفق' : ' · failed') : mine && message.status === 'sent' ? (lang === 'fa' ? ' · ارسال شد' : ' · sent') : ''}</Text>
+                        <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}{message.editedAt ? (lang === 'fa' ? ' · ویرایش‌شده' : ' · edited') : ''}{message.status === 'sending' ? (lang === 'fa' ? ' · در حال ارسال…' : ' · sending…') : message.status === 'failed' ? (lang === 'fa' ? ' · ارسال ناموفق' : ' · failed') : mine && (message.readCount ?? 0) > 0 ? (lang === 'fa' ? ' · خوانده شد' : ' · read') : mine && message.status === 'sent' ? (lang === 'fa' ? ' · ارسال شد' : ' · sent') : ''}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
                         {(['👍','❤️','😂','🔥'] as const).map(emoji => {

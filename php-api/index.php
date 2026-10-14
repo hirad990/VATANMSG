@@ -259,7 +259,7 @@ function api_delete_message(): never
 function api_message_by_id(int $id): array
 {
     $stmt = api_db()->prepare(
-        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, m.client_message_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
          FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ? LIMIT 1'
     );
     $stmt->execute([$id]);
@@ -269,7 +269,8 @@ function api_message_by_id(int $id): array
         'id' => (string)$row['id'], 'conversationId' => (string)$row['conversation_id'],
         'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
         'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
-        'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null, 'body' => $row['body'],
+        'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
+        'clientMessageId' => $row['client_message_id'] ?? null, 'body' => $row['body'],
         'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at'], 'attachments' => api_message_attachments((int)$row['id'])
     ];
 }
@@ -785,6 +786,7 @@ function api_send_message(): never
         'displayName' => $row['display_name'],
         'avatarUrl' => $row['avatar_url'] ?? null,
         'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
+        'clientMessageId' => $row['client_message_id'] ?? null,
         'body' => $row['body'],
         'createdAt' => $row['created_at'],
         'attachments' => api_message_attachments((int)$row['id'])
@@ -1208,6 +1210,7 @@ function api_search_messages(): never
             'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
             'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
             'replyToId' => $row['reply_to_id'] === null ? null : (string)$row['reply_to_id'],
+            'clientMessageId' => $row['client_message_id'] ?? null,
             'body' => $row['body'], 'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at']
         ];
     }

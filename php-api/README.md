@@ -27,14 +27,22 @@ The mobile app currently calls `https://binercraft.ir/api` directly.
 - `POST /auth/logout` — revoke current token
 - `GET /conversations` — conversations for the signed-in user
 - `POST /conversations` — create a group or channel using `{ "type": "group"|"channel", "title": "...", "description": "..." }`
-- `GET /conversations/members?id=123`
-- `GET /messages?conversation_id=123&limit=50`
+- `GET /users/search?q=ali` — search users by username or display name (minimum 2 characters)
+- `POST /conversations/direct` — start or retrieve a private conversation with `{ "username": "other_user" }`
+- `GET /conversations/members?id=123` — list members when you belong to the conversation
+- `POST /conversations/join` — join a group/channel by numeric conversation ID
+- `POST /conversations/leave` — leave a group/channel (owners must transfer ownership first)
+- `POST /conversations/add-member` — owner/admin adds a user by username
+- `GET /messages?conversation_id=123&limit=50&before_id=500` — read recent messages or paginate older messages
 - `POST /messages` — send `{ "conversation_id": 123, "body": "..." }`
+- `PATCH /messages/edit` — edit your own message with `{ "message_id": 123, "body": "..." }`
+- `POST /messages/delete` — delete your own message, or a message as a conversation owner/admin
 
 Protected routes require `Authorization: Bearer <token>`.
 
 ## Limitations
 
-- Demo login is for development only. Set `demo_login_enabled` to `false` after testing until real phone OTP is implemented.
-- This shared-hosting version uses REST polling/manual refresh, not WebSocket push. Instant delivery, SMS OTP, direct conversations, contact sync, media upload, push notifications, and end-to-end encryption are not implemented.
+- Demo login is for development only and does not verify identity. Set `demo_login_enabled` to `false` before a public launch until a real authentication flow is configured.
+- User search, private conversation creation, membership management, message editing/deletion, and paginated message reads are available in this API, but the mobile screens still need to expose all of them.
+- This shared-hosting version uses REST polling/manual refresh, not WebSocket push. Real SMS OTP, contact sync, media upload, push notifications, message read receipts, blocking/reporting, and end-to-end encryption are not implemented.
 - Never commit real passwords or bearer tokens. Restrict database user privileges and keep backups.

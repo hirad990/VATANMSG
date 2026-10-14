@@ -632,7 +632,8 @@ function AppContent() {
           setMessages(previous => {
             const pending = previous.filter(message => message.status === 'sending' || message.status === 'failed');
             const serverIds = new Set(result.messages.map(message => message.id));
-            return [...result.messages, ...pending.filter(message => !serverIds.has(message.id))];
+            const serverClientIds = new Set(result.messages.map(message => message.clientMessageId).filter(Boolean));
+            return [...result.messages, ...pending.filter(message => !serverIds.has(message.id) && !(message.clientMessageId && serverClientIds.has(message.clientMessageId)))];
           });
           const last = result.messages[result.messages.length - 1];
           if (last) void markMessagesRead(apiToken, activeRoom.id, last.id).catch(() => undefined);

@@ -492,6 +492,48 @@ function AppContent() {
 
   if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: '#F5F7FC', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 32, fontWeight: '900', color: '#5B52E8' }}>وطن</Text></View>;
 
+  // Authentication is the app's entry point: never render the messenger before sign-in.
+  if (!apiToken) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: c.bg, justifyContent: 'center' }]} edges={['top', 'bottom', 'left', 'right']}>
+        <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 28 }} keyboardShouldPersistTaps="handled">
+          <View style={{ alignItems: 'center', marginBottom: 28 }}>
+            <View style={{ width: 82, height: 82, borderRadius: 27, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 16, shadowColor: c.primary, shadowOpacity: 0.28, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
+              <Ionicons name="chatbubbles" size={42} color="#FFFFFF" />
+            </View>
+            <Text style={{ color: c.text, fontSize: 32, fontWeight: '900' }}>{lang === 'fa' ? 'وطن' : 'Vatan'}</Text>
+            <Text style={{ color: c.muted, fontSize: 13, marginTop: 5, textAlign: 'center' }}>{lang === 'fa' ? 'ارتباط، نزدیک‌تر از همیشه' : 'Closer, wherever you are'}</Text>
+          </View>
+          <View style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 26, padding: 20, shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 3 }}>
+            <Text style={{ color: c.text, fontSize: 22, fontWeight: '900', textAlign: isRTL ? 'right' : 'left' }}>{loginMode === 'login' ? (lang === 'fa' ? 'خوش برگشتی 👋' : 'Welcome back 👋') : (lang === 'fa' ? 'به وطن بپیوند' : 'Join Vatan')}</Text>
+            <Text style={{ color: c.muted, fontSize: 12, lineHeight: 19, marginTop: 6, marginBottom: 18, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'برای ادامه، وارد حساب شو یا حساب جدید بساز.' : 'Sign in or create an account to continue.'}</Text>
+            <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+              {(['login', 'register'] as const).map(mode => <Pressable key={mode} onPress={() => setLoginMode(mode)} style={[styles.authModeItem, loginMode === mode && { backgroundColor: c.primary }]}>
+                <Text style={{ color: loginMode === mode ? '#FFF' : c.muted, fontWeight: '800' }}>{mode === 'login' ? (lang === 'fa' ? 'ورود' : 'Sign in') : (lang === 'fa' ? 'ثبت‌نام' : 'Sign up')}</Text>
+              </Pressable>)}
+            </View>
+            <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'نام کاربری' : 'Username'}</Text>
+            <TextInput value={loginUsername} onChangeText={v => setLoginUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} autoCapitalize="none" autoCorrect={false} placeholder="vatan_user" placeholderTextColor={c.muted} returnKeyType="next" style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left', paddingVertical: 14 }]} />
+            {loginMode === 'register' && <>
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.displayName}</Text>
+              <TextInput value={loginDisplayName} onChangeText={setLoginDisplayName} placeholder={lang === 'fa' ? 'مثلاً کاربر وطن' : 'e.g. Vatan User'} placeholderTextColor={c.muted} maxLength={60} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', paddingVertical: 14 }]} />
+            </>}
+            <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'رمز عبور (حداقل ۸ نویسه)' : 'Password (8+ characters)'}</Text>
+            <TextInput value={loginPassword} onChangeText={setLoginPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="••••••••" placeholderTextColor={c.muted} returnKeyType="done" onSubmitEditing={() => { void loginToApi(); }} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left', paddingVertical: 14 }]} />
+            <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1, marginTop: 16, borderRadius: 15, paddingVertical: 16 }]}>
+              <Text style={styles.primaryButtonText}>{busy ? (lang === 'fa' ? 'لطفاً صبر کن…' : 'Please wait…') : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به وطن' : 'Sign in to Vatan') : (lang === 'fa' ? 'ساخت حساب و ادامه' : 'Create account & continue'))}</Text>
+            </Pressable>
+            <Text style={{ color: c.muted, fontSize: 10, lineHeight: 16, marginTop: 12, textAlign: 'center' }}>{lang === 'fa' ? 'با ورود یا ثبت‌نام، وارد فضای پیام‌رسان می‌شوی.' : 'Sign in or sign up to enter the messenger.'}</Text>
+          </View>
+          <Pressable onPress={() => setLang(lang === 'fa' ? 'en' : 'fa')} style={{ alignSelf: 'center', padding: 14, marginTop: 8 }}>
+            <Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'English' : 'فارسی'}</Text>
+          </Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />

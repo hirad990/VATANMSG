@@ -13,6 +13,8 @@ export type VatanConversation = {
   title: string;
   description: string | null;
   role?: 'owner' | 'admin' | 'member' | 'subscriber';
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
 };
 
 export type VatanMessage = {
@@ -27,7 +29,7 @@ export type VatanMessage = {
 
 type AuthResponse = { token: string; user: VatanUser };
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_VATAN_API_URL || 'http://localhost:4000').replace(/\/$/, '');
+const API_BASE_URL = (process.env.EXPO_PUBLIC_VATAN_API_URL || 'https://binercraft.ir/api').replace(/\/$/, '');
 
 export class VatanApiError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -42,66 +44,121 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
       headers: {
+        Accept: 'application/json',
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init.headers
       }
     });
   } catch {
-    throw new VatanApiError('Cannot reach Vatan server. Check the API URL and network.', 0);
+    throw new VatanApiError('Cannot reach https://binercraft.ir/api. Check hosting/API status and network.', 0);
   }
 
   const payload = await response.json().catch(() => ({})) as { error?: string };
-  if (!response.ok) throw new VatanApiError(payload.error || 'Request failed.', response.status);
+  if (!response.ok) throw new VatanApiError(payload.error || `API request failed (${response.status}).`, response.status);
   return payload as T;
 }
 
-/** Development-only login. The server must reject this endpoint in production. */
-export function loginDemo(profile: { username?: string; displayName?: string } = {}) {
-  return request<AuthResponse>('/api/auth/demo', undefined, {
+function normalizeUser(value: any): VatanUser {
+  const user = value?.user ?? value;
+  return {
+    id: String(user.id),
+    username: String(user.username ?? ''),
+    displayName: String(user.displayName ?? user.display_name ?? ''),
+    avatarUrl: user.avatarUrl ?? user.avatar_url ?? null,
+    birthYear: user.birthYear ?? user.birth_year ?? null,
+    birthCalendar: user.birthCalendar ?? user.birth_calendar ?? null
+  };
+}
+
+function normalizeConversation(value: any): VatanConversation {
+  return {
+    id: String(value.id),
+    kind: value.kind === 'direct' || value.type === 'private' ? 'direct' : (value.kind ?? value.type ?? 'group'),
+    title: String(value.title ?? ''),
+    description: value.description ?? null,
+    role: value.role,
+    lastMessage: value.lastMessage ?? value.last_message ?? null,
+    lastMessageAt: value.lastMessageAt ?? value.last_message_at ?? null
+  };
+}
+
+function normalizeMessage(value: any): VatanMessage {
+  return {
+    id: String(value.id),
+    conversationId: String(value.conversationId ?? value.conversation_id),
+    senderId: String(value.senderId ?? value.sender_id),
+    body: String(value.body ?? ''),
+    createdAt: String(value.createdAt ?? value.created_at ?? ''),
+    username: String(value.username ?? ''),
+    displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? '')
+  };
+}
+
+/** Development-only sign-in. This does not verify a phone number. */
+export async function loginDemo(profile: { username: string; displayName: string }) {
+  const result = await request<any>('/auth/demo', undefined, {
     method: 'POST',
     body: JSON.stringify(profile)
   });
+  return { ...result, user: normalizeUser(result.user) } as AuthResponse;
 }
 
-export function getMyProfile(token: string) {
-  return request<VatanUser>('/api/me', token);
+export async function getMyProfile(token: string): Promise<VatanUser> {
+  return normalizeUser(await request<any>('/auth/me', token));
 }
 
-export function updateMyProfile(token: string, profile: {
+export async function updateMyProfile(token: string, profile: {
   displayName?: string;
   username?: string;
   birthYear?: number | null;
   birthCalendar?: 'solar_hijri' | 'gregorian' | null;
   avatarUrl?: string | null;
-}) {
-  return request<VatanUser>('/api/me', token, {
+}): Promise<VatanUser> {
+  const result = await request<any>('/auth/profile', token, {
     method: 'PATCH',
     body: JSON.stringify(profile)
   });
+  return normalizeUser(result);
 }
 
-export async function listConversations(token: string) {
-  return request<{ conversations: VatanConversation[] }>('/api/conversations', token);
+export async function logout(token: string): Promise<void> {
+  await request('/auth/logout', token, { method: 'POST', body: '{}' });
+}
+
+export async function listConversations(token: string): Promise<{ conversations: VatanConversation[] }> {
+  const result = await request<{ conversations: any[] }>('/conversations', token);
+  return { conversations: (result.conversations ?? []).map(normalizeConversation) };
 }
 
 export async function createGroup(token: string, title: string, description?: string) {
-  return request<{ conversation: VatanConversation }>('/api/groups', token, {
+  const result = await request<any>('/conversations', token, {
     method: 'POST',
-    body: JSON.stringify({ title, description })
+    body: JSON.stringify({ type: 'group', title, description })
   });
+  return { ...result, conversation: normalizeConversation(result.conversation) };
 }
 
 export async function createChannel(token: string, title: string, description?: string) {
-  return request<{ conversation: VatanConversation }>('/api/channels', token, {
+  const result = await request<any>('/conversations', token, {
     method: 'POST',
-    body: JSON.stringify({ title, description })
+    body: JSON.stringify({ type: 'channel', title, description })
   });
+  return { ...result, conversation: normalizeConversation(result.conversation) };
 }
 
 export async function getMessages(token: string, conversationId: string) {
-  return request<{ messages: VatanMessage[] }>(
-    `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+  const result = await request<{ messages: any[] }>(
+    `/messages?conversation_id=${encodeURIComponent(conversationId)}&limit=50`,
     token
   );
+  return { messages: (result.messages ?? []).map(normalizeMessage) };
+}
+
+export async function sendMessage(token: string, conversationId: string, body: string) {
+  const result = await request<any>('/messages', token, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_id: Number(conversationId), body })
+  });
+  return { ...result, message: normalizeMessage(result.message) };
 }

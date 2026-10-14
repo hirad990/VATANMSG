@@ -366,7 +366,7 @@ function api_public_user(array $user): array
 function api_issue_auth_token(int $userId, array $config): string
 {
     $token = bin2hex(random_bytes(32));
-    $days = max(1, min(30, (int)($config['token_expiry_days'] ?? 7)));
+    $days = max(1, min(365, (int)($config['token_expiry_days'] ?? 90)));
     $stmt = api_db()->prepare(
         'INSERT INTO api_tokens (user_id, token_hash, expires_at)
          VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY))'
@@ -1146,7 +1146,7 @@ function api_upload_media(): never
         api_response(['error' => 'Upload storage is unavailable on the host'], 500);
     }
     $denyFile = $storageDir . '/.htaccess';
-    if (!is_file($denyFile)) file_put_contents($denyFile, "Require all denied\nDeny from all\n");
+    if (!is_file($denyFile)) file_put_contents($denyFile, "Require all denied\n");
     $storedName = bin2hex(random_bytes(24)) . '.' . $extensions[$mime];
     $destination = $storageDir . '/' . $storedName;
     if (!move_uploaded_file((string)$file['tmp_name'], $destination)) api_response(['error' => 'Could not save uploaded file'], 500);

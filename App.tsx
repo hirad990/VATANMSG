@@ -460,6 +460,7 @@ function AppContent() {
         description: roomDescription.trim(),
         themeKey: groupSettings.themeKey,
         themeMode: groupSettings.themeMode,
+        avatarUrl: groupSettings.avatarUrl,
         memberCanSend: groupSettings.memberCanSend,
         memberCanInvite: groupSettings.memberCanInvite,
         memberCanPin: groupSettings.memberCanPin,
@@ -511,7 +512,16 @@ function AppContent() {
     setActiveRoom(room);
     setMessages([]);
     setMessageDraft('');
+    setReplyingTo(null);
+    setEditingMessageId(null);
+    setGroupMembers([]);
+    setGroupSettings(null);
     setModal('chat');
+    if (room.kind === 'group') {
+      void Promise.all([getConversationSettings(apiToken, room.id), getConversationMembers(apiToken, room.id)])
+        .then(([settings, members]) => { setGroupSettings(settings); setGroupMembers(members.members); })
+        .catch(() => undefined);
+    }
   };
 
   const uploadFileToRoom = async (file: { uri: string; name: string; type: string }) => {
@@ -651,6 +661,7 @@ function AppContent() {
   }, [modal, apiToken, activeRoom?.id]);
   const labelForTab = (x: Tab) => t[x];
   const canManageGroup = groupMembers.some(member => member.id === userId && ['owner', 'admin'].includes(member.role));
+  const groupAccent = ({ violet: '#5B52E8', blue: '#2878E8', green: '#159A73', rose: '#E34E86', amber: '#D98B16', midnight: '#202B45', ocean: '#008DA8' } as Record<string, string>)[groupSettings?.themeKey ?? 'violet'] ?? c.primary;
 
   const Header = ({ title, subtitle }: { title: string; subtitle?: string }) => (
     <View style={[styles.header, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
@@ -992,7 +1003,7 @@ function AppContent() {
                     <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
                     <View style={{ maxWidth: '88%' }}>
                       <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}</Text>
-                      <View style={{ backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
+                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                         {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>

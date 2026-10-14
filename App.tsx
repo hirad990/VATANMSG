@@ -2,11 +2,40 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, getMessages, listConversations, loginWithPassword, registerAccount, searchUsers, sendMessage, updateMyProfile, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, registerAccount, searchUsers, sendMessage, updateMyProfile, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
+
+const SESSION_KEY = 'vatanmsg.session.v1';
+
+async function readSavedSession(): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(SESSION_KEY); }
+    catch { return null; }
+  }
+  return SecureStore.getItemAsync(SESSION_KEY);
+}
+
+async function saveSession(token: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(SESSION_KEY, token);
+    return;
+  }
+  await SecureStore.setItemAsync(SESSION_KEY, token, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY
+  });
+}
+
+async function clearSavedSession(): Promise<void> {
+  if (Platform.OS === 'web') {
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_KEY);
+    return;
+  }
+  await SecureStore.deleteItemAsync(SESSION_KEY);
+}
 
 function Text(props: React.ComponentProps<typeof NativeText>) {
   const flattened = StyleSheet.flatten(props.style);
@@ -89,6 +118,7 @@ function AppContent() {
   const [foundUsers, setFoundUsers] = useState<VatanUser[]>([]);
   const [memberUsername, setMemberUsername] = useState('');
   const [apiToken, setApiToken] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<VatanMessage[]>([]);
@@ -157,6 +187,41 @@ function AppContent() {
     })));
   };
 
+  // Restore the bearer session on launch. Mobile uses OS-backed secure storage;
+  // web uses browser storage because SecureStore is not available there.
+  useEffect(() => {
+    let cancelled = false;
+    const restoreSession = async () => {
+      try {
+        const token = await readSavedSession();
+        if (!token) return;
+        const user = await getMyProfile(token);
+        const conversations = await listConversations(token);
+        if (cancelled) return;
+        setApiToken(token);
+        setUserId(user.id);
+        setUsername(user.username);
+        setDisplayName(user.displayName);
+        setPhoto(user.avatarUrl);
+        setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
+        setCalendar(user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
+        setRooms(conversations.conversations.map(item => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
+          icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
+          kind: item.kind
+        })));
+      } catch {
+        await clearSavedSession().catch(() => undefined);
+      } finally {
+        if (!cancelled) setSessionReady(true);
+      }
+    };
+    void restoreSession();
+    return () => { cancelled = true; };
+  }, []);
+
   const loginToApi = async () => {
     const safeUsername = loginUsername.trim();
     if (!safeUsername) { showAlert(lang === 'fa' ? 'یک نام کاربری وارد کن.' : 'Enter a demo username.'); return; }
@@ -169,6 +234,7 @@ function AppContent() {
       const result = loginMode === 'register'
         ? await registerAccount({ username: safeUsername, displayName: loginDisplayName.trim() || safeUsername, password: loginPassword })
         : await loginWithPassword({ username: safeUsername, password: loginPassword });
+      await saveSession(result.token);
       setApiToken(result.token);
       setUserId(result.user.id);
       setUsername(result.user.username);
@@ -183,6 +249,25 @@ function AppContent() {
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'API sign-in failed.');
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const signOut = async () => {
+    const token = apiToken;
+    setBusy(true);
+    try {
+      if (token) await logoutFromApi(token);
+    } catch {
+      // Local credentials must still be removed even if the network is offline.
+    } finally {
+      await clearSavedSession().catch(() => undefined);
+      setApiToken(null);
+      setUserId(null);
+      setRooms([]);
+      setMessages([]);
+      setActiveRoom(null);
+      setModal(null);
       setBusy(false);
     }
   };
@@ -477,7 +562,7 @@ function AppContent() {
           </Pressable>
         ))}
       </View>
-      <Pressable onPress={() => setModal('login')} style={[styles.loginButton, { borderColor: c.border }]}><Ionicons name="call-outline" size={19} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{t.phone}</Text></Pressable>
+      <Pressable onPress={signOut} disabled={busy} style={[styles.loginButton, { borderColor: c.border }]}><Ionicons name="log-out-outline" size={19} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'خروج از حساب' : 'Sign out'}</Text></Pressable>
       {!!saved && <Text style={{ textAlign: 'center', color: c.primary, marginTop: 12 }}>{t.saved}</Text>}
     </>
   );
@@ -493,6 +578,10 @@ function AppContent() {
   if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: '#F5F7FC', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 32, fontWeight: '900', color: '#5B52E8' }}>وطن</Text></View>;
 
   // Authentication is the app's entry point: never render the messenger before sign-in.
+  if (!sessionReady) {
+    return <SafeAreaView style={[styles.safe, { backgroundColor: c.bg, justifyContent: 'center', alignItems: 'center' }]}><Text style={{ color: c.primary, fontSize: 28, fontWeight: '900' }}>وطن</Text><Text style={{ color: c.muted, marginTop: 8 }}>در حال بازیابی نشست…</Text></SafeAreaView>;
+  }
+
   if (!apiToken) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bg, justifyContent: 'center' }]} edges={['top', 'bottom', 'left', 'right']}>

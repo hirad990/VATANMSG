@@ -99,6 +99,10 @@ function AppContent() {
     border: '#E7EAF2', primary: '#5B52E8', soft: '#EFEEFF', input: '#F6F7FB'
   };
   const isRTL = lang === 'fa';
+
+  useEffect(() => {
+    Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
+  }, [heroMotion]);
   const filteredChats = useMemo(() => rooms.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [rooms, search]);
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);
@@ -297,7 +301,7 @@ function AppContent() {
   const renderHome = () => (
     <>
       <View style={[styles.hero, { backgroundColor: dark ? '#211E4A' : '#EAE9FF' }]}>
-        <View style={[styles.heroGlow, { backgroundColor: c.primary }]} />
+        <Animated.View style={[styles.heroGlow, { backgroundColor: c.primary, opacity: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.13] }), transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
         <Text style={[styles.heroEyebrow, { color: c.primary }]}>{t.brand.toUpperCase()} · {t.demo}</Text>
         <Text style={[styles.heroTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{t.welcome}</Text>
         <Text style={[styles.heroSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{t.overview}</Text>

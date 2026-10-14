@@ -999,6 +999,38 @@ function api_transfer_conversation_ownership(): never
     api_response(['success' => true, 'newOwnerId' => (string)$targetId]);
 }
 
+
+function api_search_messages(): never
+{
+    api_method('GET');
+    $user = api_user();
+    $conversationId = filter_input(INPUT_GET, 'conversation_id', FILTER_VALIDATE_INT);
+    $query = trim((string)($_GET['q'] ?? ''));
+    if (!$conversationId || $conversationId < 1 || mb_strlen($query) < 2 || mb_strlen($query) > 100) {
+        api_response(['messages' => []]);
+    }
+    api_require_membership((int)$conversationId, (int)$user['id']);
+    $like = '%' . addcslashes($query, '%_\\\\') . '%';
+    $stmt = api_db()->prepare(
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
+         FROM messages m JOIN users u ON u.id = m.sender_id
+         WHERE m.conversation_id = ? AND m.deleted_at IS NULL AND m.body LIKE ?
+         ORDER BY m.id DESC LIMIT 50'
+    );
+    $stmt->execute([$conversationId, $like]);
+    $messages = [];
+    foreach (array_reverse($stmt->fetchAll()) as $row) {
+        $messages[] = [
+            'id' => (string)$row['id'], 'conversationId' => (string)$row['conversation_id'],
+            'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
+            'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
+            'replyToId' => $row['reply_to_id'] === null ? null : (string)$row['reply_to_id'],
+            'body' => $row['body'], 'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at']
+        ];
+    }
+    api_response(['messages' => $messages]);
+}
+
 function api_toggle_message_reaction(): never
 {
     api_method('POST');
@@ -1117,6 +1149,9 @@ try {
             break;
         case 'conversations/transfer-ownership':
             api_transfer_conversation_ownership();
+            break;
+        case 'messages/search':
+            api_search_messages();
             break;
         case 'messages/react':
             api_toggle_message_reaction();

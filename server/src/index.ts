@@ -101,17 +101,16 @@ app.post('/api/auth/demo', async (req, res, next) => {
     if (!parsed.success) return fail(res, 400, 'Invalid demo profile.');
     const username = parsed.data.username ?? `demo_${randomUUID().replaceAll('-', '').slice(0, 10)}`;
     const displayName = parsed.data.displayName ?? 'Vatan Demo';
-    const [existing] = await pool.execute<UserRow[]>('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
-    let user = existing[0];
-    if (!user) {
-      const id = randomUUID();
-      await pool.execute<ResultSetHeader>(
-        'INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)',
-        [id, username, displayName]
-      );
-      const [created] = await pool.execute<UserRow[]>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
-      user = created[0];
-    }
+    // Demo login must never turn a chosen username into an account-takeover shortcut.
+    const [existing] = await pool.execute<UserRow[]>('SELECT id FROM users WHERE username = ? LIMIT 1', [username]);
+    if (existing.length > 0) return fail(res, 409, 'Username is already taken. Choose a different demo username.');
+    const id = randomUUID();
+    await pool.execute<ResultSetHeader>(
+      'INSERT INTO users (id, username, display_name) VALUES (?, ?, ?)',
+      [id, username, displayName]
+    );
+    const [created] = await pool.execute<UserRow[]>('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+    const user = created[0];
     if (!user) return fail(res, 500, 'Could not create demo user.');
     return res.status(200).json({
       token: tokenFor(user.id),
@@ -143,10 +142,15 @@ app.patch('/api/me', authenticate, async (req: AuthRequest, res, next) => {
     }).strict().safeParse(req.body);
     if (!parsed.success || Object.keys(parsed.data ?? {}).length === 0) return fail(res, 400, 'Invalid profile update.');
     const data = parsed.data;
-    await pool.execute(
-      'UPDATE users SET display_name = COALESCE(?, display_name), username = COALESCE(?, username), birth_year = ?, birth_calendar = ?, avatar_url = COALESCE(?, avatar_url) WHERE id = ?',
-      [data.displayName ?? null, data.username ?? null, data.birthYear === undefined ? null : data.birthYear, data.birthCalendar === undefined ? null : data.birthCalendar, data.avatarUrl === undefined ? null : data.avatarUrl, req.userId]
-    );
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (data.displayName !== undefined) { updates.push('display_name = ?'); values.push(data.displayName); }
+    if (data.username !== undefined) { updates.push('username = ?'); values.push(data.username); }
+    if (data.birthYear !== undefined) { updates.push('birth_year = ?'); values.push(data.birthYear); }
+    if (data.birthCalendar !== undefined) { updates.push('birth_calendar = ?'); values.push(data.birthCalendar); }
+    if (data.avatarUrl !== undefined) { updates.push('avatar_url = ?'); values.push(data.avatarUrl); }
+    values.push(req.userId);
+    await pool.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
     const [rows] = await pool.execute<UserRow[]>('SELECT * FROM users WHERE id = ? LIMIT 1', [req.userId]);
     const user = rows[0];
     return res.json({ id: user.id, username: user.username, displayName: user.display_name, avatarUrl: user.avatar_url, birthYear: user.birth_year, birthCalendar: user.birth_calendar });

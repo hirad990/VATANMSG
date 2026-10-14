@@ -16,6 +16,8 @@ jobs:
           node-version: 22
       - name: Install app dependencies
         run: npm install --no-audit --no-fund
+      - name: Install optional Node backend dependencies
+        run: npm install --prefix server --no-audit --no-fund
       - name: TypeScript check
         run: npm run typecheck
       - name: PHP syntax check

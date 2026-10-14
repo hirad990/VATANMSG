@@ -1,46 +1,52 @@
 # پیام‌رسان وطن | Vatan Messenger
 
-A cross-platform messenger project built with **React Native + Expo + TypeScript**, with a **Node.js + TypeScript + MySQL/MariaDB** backend.
-
-## Repository status
-
-This is an actively developed staged prototype. The mobile app has a bilingual Persian/English UI, light/dark themes, profile editing and local group/channel creation. The backend now includes a MySQL schema, development-only demo sign-in, profile/conversation REST endpoints, and authenticated Socket.IO message persistence/broadcast logic. The mobile API and Socket.IO client helpers are present, but the current screens are **not yet wired to those services**.
+Vatan is a cross-platform messenger prototype built with **React Native + Expo + TypeScript**. The deployed backend target is **PHP 8.2 + MariaDB on cPanel**.
 
 ## Mobile app
 
-1. Install a supported Node.js LTS version.
-2. Install dependencies: `npm install`
-3. Copy `.env.example` to `.env` and set `EXPO_PUBLIC_VATAN_API_URL`.
-4. Start Expo: `npx expo start`
+```bash
+npm install
+npx expo start
+```
 
-For a physical phone, set the API URL to your computer's reachable LAN IP (not `localhost`). Use HTTPS in deployed environments.
+The API client defaults to `https://binercraft.ir/api`. To override it for another environment, set `EXPO_PUBLIC_VATAN_API_URL` in the Expo environment.
 
-## Backend
+## PHP API deployment
 
-See [server/README.md](server/README.md).
+The complete cPanel-compatible API is in [`php-api/`](php-api/).
 
-1. Create a local `server/.env` from `server/.env.example`; replace all placeholders.
-2. Apply `server/db/schema.sql` to your MySQL/MariaDB instance.
-3. Create a restricted database account for the app.
-4. In `server/`, run `npm install`, then `npm run typecheck`, then `npm run dev`.
+1. Create `public_html/api/` in cPanel File Manager.
+2. Upload the contents of `php-api/` into that directory.
+3. Copy `config.example.php` to `config.php` on the host only.
+4. Set the host's database name, database username, and password in `config.php`. Never commit the real configuration.
+5. For a fresh database, run `php-api/schema.sql` in phpMyAdmin.
+6. If you already created the earlier prototype tables, inspect them and run only the necessary statements from `php-api/upgrade-existing.sql`. Skip any ALTER statement for a column that already exists.
+7. Open `https://binercraft.ir/api/health`; it should return JSON.
 
-Health check: `GET /health`.
+Required PHP extensions: `pdo_mysql` and `mbstring`. Use HTTPS.
 
-## Current backend routes
+## Implemented API routes
 
-- `POST /api/auth/demo` — development-only test account and signed bearer token
-- `GET/PATCH /api/me` — read/update profile
-- `GET /api/conversations` — list joined groups/channels
-- `POST /api/groups` and `POST /api/channels` — create a group/channel
-- `GET /api/conversations/:id/messages` — fetch recent conversation messages
-- Socket.IO `conversation:join` and `message:send` — authenticated membership checks and persisted real-time messages
+- `GET /health`
+- `POST /auth/demo` — test account only; not phone verification
+- `GET /auth/me`
+- `PATCH /auth/profile`
+- `POST /auth/logout`
+- `GET /conversations`
+- `POST /conversations` — create group or channel
+- `GET /conversations/members?id=123`
+- `GET /messages?conversation_id=123&limit=50`
+- `POST /messages`
 
-## Not production-ready yet
+Protected routes use `Authorization: Bearer <token>`.
 
-- Demo login is not phone-number verification. It is disabled in production and the server refuses to start if demo login is enabled in production.
-- Mobile screens still use local demo state; connect them to `src/services/api.ts` and `src/services/realtime.ts` in the next stage.
-- Real SMS OTP, secure on-device token storage, direct-message creation, contact sync, invitations/member management, push notifications, media uploads, moderation, end-to-end encryption, CI and automated tests remain unfinished.
-- The app has **no end-to-end encryption** at this stage. Do not describe it as encrypted end-to-end.
-- Before public deployment, configure HTTPS/WSS, production authentication, strict origins, secret management, database backups, monitoring, and abuse protection.
+## Current state and limitations
 
-Never commit real credentials, tokens, signing keys, database passwords, or other secrets to GitHub.
+- The React Native UI now calls the PHP API for demo sign-in, profile changes, conversation lists, group/channel creation, and message send/read.
+- The app polls open conversations for new messages every five seconds because ordinary shared PHP hosting does not necessarily support persistent WebSockets.
+- Demo sign-in is not SMS OTP. Disable it in the host's `config.php` after testing until real phone verification is implemented.
+- The app currently keeps the bearer token in memory; a reload requires signing in again. Add secure device storage before production.
+- Direct/private conversation creation, contact sync, media upload, push notifications, moderation, end-to-end encryption, and production account recovery are not implemented.
+- The previous `server/` Node.js backend remains in the repository as a development/reference implementation; the cPanel deployment described here uses `php-api/`.
+
+Never commit real database passwords, API tokens, or signing secrets.

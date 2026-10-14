@@ -353,3 +353,10 @@ export async function uploadConversationAttachment(
   if (!response.ok) throw new VatanApiError(payload.error || `Upload failed (${response.status}).`, response.status);
   return { message: normalizeMessage(payload.message), attachment: payload.attachment as VatanAttachment };
 }
+
+export async function registerPushDevice(token: string, pushToken: string, platform: 'ios' | 'android' | 'web'): Promise<void> {
+  await request('/push/register', token, {
+    method: 'POST',
+    body: JSON.stringify({ push_token: pushToken, platform })
+  });
+}

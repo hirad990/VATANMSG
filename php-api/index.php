@@ -823,14 +823,29 @@ function api_get_messages(): never
 
 function api_update_conversation_settings(): never
 {
-    api_method('PATCH', 'POST');
+    api_method('GET', 'PATCH', 'POST');
     $user = api_user();
     $data = api_input();
-    $id = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $id = filter_var($data['conversation_id'] ?? $_GET['id'] ?? null, FILTER_VALIDATE_INT);
     if (!$id || $id < 1) api_response(['error' => 'Valid conversation_id required'], 422);
     $membership = api_require_membership((int)$id, (int)$user['id']);
-    if (!in_array($membership['role'], ['owner', 'admin'], true) || $membership['type'] === 'private') {
+    if ($membership['type'] === 'private') api_response(['error' => 'Group settings are unavailable for private chats'], 422);
+    if ($method !== 'GET' && !in_array($membership['role'], ['owner', 'admin'], true)) {
         api_response(['error' => 'Only group owners/admins can manage group settings'], 403);
+    }
+    if ($method === 'GET') {
+        $stmt = api_db()->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        api_response(['settings' => [
+            'id' => (string)$row['id'], 'title' => $row['title'], 'description' => $row['description'],
+            'avatarUrl' => $row['avatar_url'], 'themeKey' => $row['theme_key'] ?? 'violet',
+            'themeMode' => $row['theme_mode'] ?? 'system',
+            'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
+            'memberCanInvite' => (bool)($row['member_can_invite'] ?? 0),
+            'memberCanPin' => (bool)($row['member_can_pin'] ?? 0),
+            'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0)
+        ]]);
     }
 
     $sets = [];

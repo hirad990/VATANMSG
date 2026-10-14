@@ -22,7 +22,8 @@
           "photosPermission": "Allow Vatan to choose a profile photo.",
           "cameraPermission": "Allow Vatan to take a profile photo."
         }
-      ]
+      ],
+      "expo-notifications"
     ]
   }
 }

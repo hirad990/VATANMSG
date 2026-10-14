@@ -30,6 +30,7 @@ export type VatanMessage = {
   replyToId?: string | null;
   status?: 'sending' | 'sent' | 'failed';
   clientMessageId?: string;
+  attachments?: VatanAttachment[];
 };
 
 type AuthResponse = { token: string; user: VatanUser };
@@ -99,7 +100,8 @@ function normalizeMessage(value: any): VatanMessage {
     username: String(value.username ?? ''),
     displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? ''),
     avatarUrl: value.avatarUrl ?? value.avatar_url ?? null,
-    replyToId: value.replyToId == null && value.reply_to_id == null ? null : String(value.replyToId ?? value.reply_to_id)
+    replyToId: value.replyToId == null && value.reply_to_id == null ? null : String(value.replyToId ?? value.reply_to_id),
+    attachments: Array.isArray(value.attachments) ? value.attachments : []
   };
 }
 
@@ -314,4 +316,40 @@ export async function searchConversationMessages(token: string, conversationId: 
     token
   );
   return { messages: (result.messages ?? []).map(normalizeMessage) };
+}
+
+
+export type VatanAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+  createdAt?: string;
+};
+
+export async function uploadConversationAttachment(
+  token: string,
+  conversationId: string,
+  file: { uri: string; name: string; type: string }
+): Promise<{ message: VatanMessage; attachment: VatanAttachment }> {
+  const form = new FormData();
+  form.append('conversation_id', conversationId);
+  if (typeof window !== 'undefined') {
+    const blob = await fetch(file.uri).then(response => {
+      if (!response.ok) throw new Error('Could not read the selected file.');
+      return response.blob();
+    });
+    form.append('file', blob, file.name);
+  } else {
+    form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+  }
+  const response = await fetch(`${API_BASE_URL}/media/upload`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    body: form
+  });
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new VatanApiError(payload.error || `Upload failed (${response.status}).`, response.status);
+  return { message: normalizeMessage(payload.message), attachment: payload.attachment as VatanAttachment };
 }

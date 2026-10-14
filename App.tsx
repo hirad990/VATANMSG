@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, transferConversationOwnership, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -125,6 +125,9 @@ function AppContent() {
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<VatanMessage[]>([]);
   const [messageDraft, setMessageDraft] = useState('');
+  const [replyingTo, setReplyingTo] = useState<VatanMessage | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [messageReactions, setMessageReactions] = useState<Record<string, { reaction: string; count: number }[]>>({});
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -455,16 +458,61 @@ function AppContent() {
 
   const submitMessage = async () => {
     if (!apiToken || !activeRoom || !messageDraft.trim()) return;
-    setBusy(true);
-    try {
-      const result = await sendMessage(apiToken, activeRoom.id, messageDraft.trim());
-      setMessages(previous => [...previous, result.message]);
-      setMessageDraft('');
-    } catch (error) {
-      showAlert(error instanceof Error ? error.message : 'Could not send message.');
-    } finally {
-      setBusy(false);
+    const body = messageDraft.trim();
+    if (editingMessageId) {
+      const targetId = editingMessageId;
+      try {
+        const result = await editMessage(apiToken, targetId, body);
+        setMessages(previous => previous.map(message => message.id === targetId ? { ...result.message, status: 'sent' } : message));
+        setEditingMessageId(null);
+        setMessageDraft('');
+      } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not edit message.'); }
+      return;
     }
+    const clientMessageId = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+    const localId = 'local-' + clientMessageId;
+    const optimistic: VatanMessage = {
+      id: localId, conversationId: activeRoom.id, senderId: userId ?? '',
+      username, displayName, avatarUrl: photo, body, createdAt: new Date().toISOString(),
+      replyToId: replyingTo?.id ?? null, status: 'sending', clientMessageId
+    };
+    setMessages(previous => [...previous, optimistic]);
+    setMessageDraft('');
+    setReplyingTo(null);
+    try {
+      const result = await sendMessage(apiToken, activeRoom.id, body, { replyToId: optimistic.replyToId, clientMessageId });
+      setMessages(previous => previous.map(message => message.id === localId ? { ...result.message, status: 'sent', clientMessageId } : message));
+    } catch (error) {
+      setMessages(previous => previous.map(message => message.id === localId ? { ...message, status: 'failed' } : message));
+      showAlert(error instanceof Error ? error.message : 'Could not send message.');
+    }
+  };
+
+  const retryMessage = async (message: VatanMessage) => {
+    if (!apiToken || !activeRoom || !message.clientMessageId) return;
+    setMessages(previous => previous.map(item => item.id === message.id ? { ...item, status: 'sending' } : item));
+    try {
+      const result = await sendMessage(apiToken, activeRoom.id, message.body, { replyToId: message.replyToId, clientMessageId: message.clientMessageId });
+      setMessages(previous => previous.map(item => item.id === message.id ? { ...result.message, status: 'sent', clientMessageId: message.clientMessageId } : item));
+    } catch {
+      setMessages(previous => previous.map(item => item.id === message.id ? { ...item, status: 'failed' } : item));
+    }
+  };
+
+  const reactToMessage = async (message: VatanMessage, reaction: string) => {
+    if (!apiToken || message.id.startsWith('local-')) return;
+    try {
+      const result = await toggleMessageReaction(apiToken, message.id, reaction);
+      setMessageReactions(previous => ({ ...previous, [message.id]: result.reactions }));
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not react to message.'); }
+  };
+
+  const removeMessage = async (message: VatanMessage) => {
+    if (!apiToken || message.id.startsWith('local-')) return;
+    try {
+      await deleteMessage(apiToken, message.id);
+      setMessages(previous => previous.filter(item => item.id !== message.id));
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not delete message.'); }
   };
 
   useEffect(() => {
@@ -473,7 +521,15 @@ function AppContent() {
     const refresh = async () => {
       try {
         const result = await getMessages(apiToken, activeRoom.id);
-        if (!cancelled) setMessages(result.messages);
+        if (!cancelled) {
+          setMessages(previous => {
+            const pending = previous.filter(message => message.status === 'sending' || message.status === 'failed');
+            const serverIds = new Set(result.messages.map(message => message.id));
+            return [...result.messages, ...pending.filter(message => !serverIds.has(message.id))];
+          });
+          const last = result.messages[result.messages.length - 1];
+          if (last) void markMessagesRead(apiToken, activeRoom.id, last.id).catch(() => undefined);
+        }
       } catch {
         // Keep the current messages visible if a polling request temporarily fails.
       }
@@ -802,13 +858,30 @@ function AppContent() {
               <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
             </> : modal === 'chat' ? <>
-              <ScrollView style={styles.fullChatMessages} contentContainerStyle={{ gap: 10, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
+              <ScrollView style={styles.fullChatMessages} contentContainerStyle={{ gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
-                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '88%', backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
-                    {!mine && <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3 }}>{message.displayName}</Text>}
-                    <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
-                    <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}</Text>
+                  const reactions = messageReactions[message.id] ?? [];
+                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
+                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
+                    <View style={{ maxWidth: '88%' }}>
+                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}</Text>
+                      <View style={{ backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
+                        {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
+                        <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                        <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}{message.editedAt ? (lang === 'fa' ? ' · ویرایش‌شده' : ' · edited') : ''}{message.status === 'sending' ? (lang === 'fa' ? ' · در حال ارسال…' : ' · sending…') : message.status === 'failed' ? (lang === 'fa' ? ' · ارسال ناموفق' : ' · failed') : mine && message.status === 'sent' ? (lang === 'fa' ? ' · ارسال شد' : ' · sent') : ''}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        {(['👍','❤️','😂','🔥'] as const).map(emoji => {
+                          const count = reactions.find(item => item.reaction === emoji)?.count ?? 0;
+                          return <Pressable key={emoji} onPress={() => { void reactToMessage(message, emoji); }} style={{ backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 }}><Text style={{ fontSize: 10, color: c.text }}>{emoji}{count ? ' ' + count : ''}</Text></Pressable>;
+                        })}
+                        <Pressable onPress={() => { setReplyingTo(message); setEditingMessageId(null); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="return-up-back-outline" size={15} color={c.muted} /></Pressable>
+                        {mine && !message.id.startsWith('local-') && <Pressable onPress={() => { setEditingMessageId(message.id); setReplyingTo(null); setMessageDraft(message.body); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="create-outline" size={15} color={c.muted} /></Pressable>}
+                        {(mine || groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role))) && !message.id.startsWith('local-') && <Pressable onPress={() => { void removeMessage(message); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="trash-outline" size={15} color="#E34E68" /></Pressable>}
+                        {message.status === 'failed' && <Pressable onPress={() => { void retryMessage(message); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="refresh" size={15} color="#E34E68" /></Pressable>}
+                      </View>
+                    </View>
                   </View>;
                 })}
               </ScrollView>
@@ -816,9 +889,13 @@ function AppContent() {
                 <TextInput value={memberUsername} onChangeText={setMemberUsername} autoCapitalize="none" placeholder={lang === 'fa' ? 'افزودن با نام کاربری' : 'Add member by username'} placeholderTextColor={c.muted} style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, marginBottom: 0 }]} />
                 <Pressable disabled={busy || !memberUsername.trim()} onPress={() => { void inviteMember(); }} style={[styles.memberAddButton, { backgroundColor: c.soft }]}><Ionicons name="person-add" size={18} color={c.primary} /></Pressable>
               </View>}
+              {!!(replyingTo || editingMessageId) && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', justifyContent: 'space-between', padding: 8, backgroundColor: c.soft, borderRadius: 10, marginTop: 6 }}>
+                <Text style={{ color: c.primary, fontSize: 11, flex: 1 }}>{editingMessageId ? (lang === 'fa' ? 'ویرایش پیام' : 'Editing message') : (lang === 'fa' ? 'پاسخ به: ' + (replyingTo?.displayName ?? '') : 'Reply to: ' + (replyingTo?.displayName ?? ''))}</Text>
+                <Pressable onPress={() => { setReplyingTo(null); setEditingMessageId(null); setMessageDraft(''); }}><Ionicons name="close-circle" size={18} color={c.muted} /></Pressable>
+              </View>}
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…'} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
-                <Pressable disabled={busy || !messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: busy || !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name="send" size={18} color="#FFF" /></Pressable>
+                <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
+                <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>
             </> : <>
               <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>

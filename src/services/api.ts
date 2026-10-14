@@ -261,6 +261,11 @@ export async function getConversationMembers(token: string, conversationId: stri
   })) };
 }
 
+export async function getConversationSettings(token: string, conversationId: string): Promise<VatanGroupSettings> {
+  const result = await request<{ settings: VatanGroupSettings }>(`/conversations/manage?id=${encodeURIComponent(conversationId)}`, token);
+  return result.settings;
+}
+
 export async function updateConversationSettings(token: string, conversationId: string, settings: Partial<Omit<VatanGroupSettings, 'id'>>): Promise<VatanGroupSettings> {
   const result = await request<{ settings: any }>('/conversations/manage', token, {
     method: 'PATCH',

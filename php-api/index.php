@@ -259,7 +259,7 @@ function api_delete_message(): never
 function api_message_by_id(int $id): array
 {
     $stmt = api_db()->prepare(
-        'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at, m.edited_at
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
          FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ? LIMIT 1'
     );
     $stmt->execute([$id]);
@@ -268,7 +268,8 @@ function api_message_by_id(int $id): array
     return [
         'id' => (string)$row['id'], 'conversationId' => (string)$row['conversation_id'],
         'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
-        'displayName' => $row['display_name'], 'body' => $row['body'],
+        'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url'] ?? null,
+        'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null, 'body' => $row['body'],
         'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at']
     ];
 }
@@ -721,6 +722,8 @@ function api_send_message(): never
     $data = api_input();
     $conversationId = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
     $body = trim((string)($data['body'] ?? ''));
+    $replyToId = isset($data['reply_to_id']) ? filter_var($data['reply_to_id'], FILTER_VALIDATE_INT) : null;
+    $clientMessageId = trim((string)($data['client_message_id'] ?? ''));
     $config = api_config();
     $max = max(1, min(4000, (int)($config['max_message_length'] ?? 4000)));
 
@@ -730,8 +733,20 @@ function api_send_message(): never
     if ($body === '' || mb_strlen($body) > $max) {
         api_response(['error' => 'Message is empty or too long'], 422);
     }
+    if ($clientMessageId !== '' && !preg_match('/^[A-Za-z0-9_-]{8,64}$/', $clientMessageId)) api_response(['error' => 'Invalid client_message_id'], 422);
+    if ($replyToId !== null && (!$replyToId || $replyToId < 1)) api_response(['error' => 'Invalid reply_to_id'], 422);
 
     $membership = api_require_membership((int)$conversationId, (int)$user['id']);
+    if ($replyToId !== null) {
+        $replyCheck = api_db()->prepare('SELECT id FROM messages WHERE id = ? AND conversation_id = ? AND deleted_at IS NULL LIMIT 1');
+        $replyCheck->execute([$replyToId, $conversationId]);
+        if (!$replyCheck->fetch()) api_response(['error' => 'Reply target not found in this conversation'], 404);
+    }
+    if ($clientMessageId !== '') {
+        $existing = api_db()->prepare('SELECT id FROM messages WHERE conversation_id = ? AND sender_id = ? AND client_message_id = ? LIMIT 1');
+        $existing->execute([$conversationId, $user['id'], $clientMessageId]);
+        if ($existingId = $existing->fetchColumn()) api_response(['message' => api_message_by_id((int)$existingId)], 200);
+    }
     if ($membership['type'] === 'channel' && !in_array($membership['role'], ['owner', 'admin'], true)) {
         api_response(['error' => 'Only channel admins can publish messages'], 403);
     }
@@ -751,12 +766,12 @@ function api_send_message(): never
         }
     }
 
-    $stmt = api_db()->prepare('INSERT INTO messages (conversation_id, sender_id, body) VALUES (?, ?, ?)');
-    $stmt->execute([$conversationId, $user['id'], $body]);
+    $stmt = api_db()->prepare('INSERT INTO messages (conversation_id, sender_id, reply_to_id, client_message_id, body) VALUES (?, ?, ?, ?, ?)');
+    $stmt->execute([$conversationId, $user['id'], $replyToId, $clientMessageId === '' ? null : $clientMessageId, $body]);
     $id = (int)api_db()->lastInsertId();
 
     $stmt = api_db()->prepare(
-        'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
          FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ? LIMIT 1'
     );
     $stmt->execute([$id]);
@@ -767,6 +782,8 @@ function api_send_message(): never
         'senderId' => (string)$row['sender_id'],
         'username' => $row['username'],
         'displayName' => $row['display_name'],
+        'avatarUrl' => $row['avatar_url'] ?? null,
+        'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
         'body' => $row['body'],
         'createdAt' => $row['created_at'],
     ]], 201);
@@ -788,7 +805,7 @@ function api_get_messages(): never
 
     if ($beforeId && $beforeId > 0) {
         $stmt = api_db()->prepare(
-            'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at, m.edited_at
+            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
              FROM messages m JOIN users u ON u.id = m.sender_id
              WHERE m.conversation_id = ? AND m.id < ? AND m.deleted_at IS NULL
              ORDER BY m.id DESC LIMIT ' . $limit
@@ -796,7 +813,7 @@ function api_get_messages(): never
         $stmt->execute([$conversationId, $beforeId]);
     } else {
         $stmt = api_db()->prepare(
-            'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at
+            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
              FROM messages m JOIN users u ON u.id = m.sender_id
              WHERE m.conversation_id = ? AND m.deleted_at IS NULL
              ORDER BY m.id DESC LIMIT ' . $limit
@@ -812,6 +829,8 @@ function api_get_messages(): never
             'senderId' => (string)$row['sender_id'],
             'username' => $row['username'],
             'displayName' => $row['display_name'],
+            'avatarUrl' => $row['avatar_url'] ?? null,
+            'replyToId' => isset($row['reply_to_id']) && $row['reply_to_id'] !== null ? (string)$row['reply_to_id'] : null,
             'body' => $row['body'],
             'createdAt' => $row['created_at'],
             'editedAt' => $row['edited_at'] ?? null,

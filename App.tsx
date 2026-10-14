@@ -141,7 +141,7 @@ function AppContent() {
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -175,6 +175,7 @@ function AppContent() {
   const [draftsByRoom, setDraftsByRoom] = useState<Record<string, string>>({});
   const [savedMessages, setSavedMessages] = useState<SavedMessage[]>([]);
   const [savedDataReady, setSavedDataReady] = useState(false);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [appPrefsReady, setAppPrefsReady] = useState(false);
 
   const t = COPY[lang];
@@ -326,6 +327,28 @@ function AppContent() {
     setPinnedRoomIds(previous => previous.includes(room.id)
       ? previous.filter(id => id !== room.id)
       : [room.id, ...previous]);
+  };
+
+  const forwardSelectedMessages = async (target: Room) => {
+    if (!apiToken || selectedMessageIds.length === 0) return;
+    const chosen = messages.filter(message => selectedMessageIds.includes(message.id) && !message.id.startsWith('local-'));
+    if (!chosen.length) { showAlert(lang === 'fa' ? 'پیام قابل انتقالی انتخاب نشده.' : 'No sendable messages selected.'); return; }
+    setBusy(true);
+    try {
+      for (const message of chosen) {
+        const attachmentNames = (message.attachments ?? []).map(file => file.name).join(', ');
+        const original = message.body.trim() || (attachmentNames ? `📎 ${attachmentNames}` : '');
+        if (!original) continue;
+        const body = `${lang === 'fa' ? '↪ پیام انتقال‌یافته از' : '↪ Forwarded from'} ${message.displayName || message.username}:\n${original}`;
+        await sendMessage(apiToken, target.id, body, { clientMessageId: `fwd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` });
+      }
+      setSelectedMessageIds([]);
+      setModal(null);
+      showAlert(lang === 'fa' ? `پیام‌ها به «${target.title}» منتقل شدند.` : `Messages forwarded to ${target.title}.`);
+      await loadConversations(apiToken);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'انتقال پیام ناموفق بود.' : 'Forwarding failed.'));
+    } finally { setBusy(false); }
   };
 
   const toggleSavedMessage = (message: VatanMessage) => {
@@ -1130,14 +1153,24 @@ function AppContent() {
           <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
-            {modal === 'group' || modal === 'channel' ? <>
+            {modal === 'forward' ? <>
+              <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? `${selectedMessageIds.length} پیام انتخاب شده. پیام‌های متنی به گفت‌وگوی مقصد فرستاده می‌شوند.` : `${selectedMessageIds.length} messages selected. Text content will be sent to the destination chat.`}</Text>
+              <ScrollView style={{ maxHeight: '65%' }}>
+                {rooms.map(room => <Pressable key={room.id} disabled={busy} onPress={() => { void forwardSelectedMessages(room); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, opacity: busy ? 0.5 : 1 }]}>
+                  <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={42} />
+                  <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{room.title}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>{room.kind === 'group' ? t.groups : room.kind === 'channel' ? t.channels : (lang === 'fa' ? 'شخصی' : 'Private')}</Text></View>
+                  <Ionicons name="arrow-redo-outline" size={19} color={c.primary} />
+                </Pressable>)}
+              </ScrollView>
+              <Pressable onPress={() => { setModal('chat'); setSelectedMessageIds([]); }} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+            </> : modal === 'group' || modal === 'channel' ? <>
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.name}</Text>
               <TextInput value={roomName} onChangeText={setRoomName} placeholder={modal === 'group' ? (lang === 'fa' ? 'مثلاً دوستان' : 'e.g. Friends') : (lang === 'fa' ? 'مثلاً اخبار وطن' : 'e.g. Vatan News')} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
@@ -1225,6 +1258,13 @@ function AppContent() {
               <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
             </> : modal === 'chat' ? <>
+              {selectedMessageIds.length > 0 && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: 14, backgroundColor: c.soft, marginTop: 6 }}>
+                <Text style={{ color: c.primary, fontSize: 11, fontWeight: '900' }}>{selectedMessageIds.length} {lang === 'fa' ? 'پیام انتخاب شده' : 'selected'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Pressable onPress={() => setModal('forward')}><Ionicons name="arrow-redo-outline" size={20} color={c.primary} /></Pressable>
+                  <Pressable onPress={() => setSelectedMessageIds([])}><Ionicons name="close-circle-outline" size={20} color={c.muted} /></Pressable>
+                </View>
+              </View>}
               <ScrollView style={styles.fullChatMessages} contentContainerStyle={{ gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
@@ -1248,6 +1288,7 @@ function AppContent() {
                           const count = reactions.find(item => item.reaction === emoji)?.count ?? 0;
                           return <Pressable key={emoji} onPress={() => { void reactToMessage(message, emoji); }} style={{ backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 }}><Text style={{ fontSize: 10, color: c.text }}>{emoji}{count ? ' ' + count : ''}</Text></Pressable>;
                         })}
+                        {!message.id.startsWith('local-') && <Pressable onPress={() => setSelectedMessageIds(previous => previous.includes(message.id) ? previous.filter(id => id !== message.id) : [...previous, message.id])} style={{ paddingHorizontal: 4, paddingVertical: 3 }} accessibilityRole="button" accessibilityLabel={selectedMessageIds.includes(message.id) ? (lang === 'fa' ? 'لغو انتخاب پیام' : 'Unselect message') : (lang === 'fa' ? 'انتخاب برای انتقال' : 'Select to forward')}><Ionicons name={selectedMessageIds.includes(message.id) ? 'checkbox' : 'square-outline'} size={15} color={selectedMessageIds.includes(message.id) ? c.primary : c.muted} /></Pressable>}
                         <Pressable onPress={() => toggleSavedMessage(message)} style={{ paddingHorizontal: 4, paddingVertical: 3 }} accessibilityRole="button" accessibilityLabel={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? (lang === 'fa' ? 'حذف از پیام‌های ذخیره‌شده' : 'Remove saved message') : (lang === 'fa' ? 'ذخیره پیام' : 'Save message')}><Ionicons name={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? 'bookmark' : 'bookmark-outline'} size={15} color={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? c.primary : c.muted} /></Pressable>
                         <Pressable onPress={() => { setReplyingTo(message); setEditingMessageId(null); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="return-up-back-outline" size={15} color={c.muted} /></Pressable>
                         {mine && !message.id.startsWith('local-') && <Pressable onPress={() => { setEditingMessageId(message.id); setReplyingTo(null); setMessageDraft(message.body); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="create-outline" size={15} color={c.muted} /></Pressable>}

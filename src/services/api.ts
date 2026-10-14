@@ -101,6 +101,7 @@ function normalizeMessage(value: any): VatanMessage {
     displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? ''),
     avatarUrl: value.avatarUrl ?? value.avatar_url ?? null,
     replyToId: value.replyToId == null && value.reply_to_id == null ? null : String(value.replyToId ?? value.reply_to_id),
+    clientMessageId: value.clientMessageId ?? value.client_message_id ?? undefined,
     attachments: Array.isArray(value.attachments) ? value.attachments : []
   };
 }

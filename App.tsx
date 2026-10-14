@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -105,7 +105,7 @@ function AppContent() {
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -117,6 +117,9 @@ function AppContent() {
   const [contactsQuery, setContactsQuery] = useState('');
   const [foundUsers, setFoundUsers] = useState<VatanUser[]>([]);
   const [memberUsername, setMemberUsername] = useState('');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [messageSearchQuery, setMessageSearchQuery] = useState('');
+  const [messageSearchResults, setMessageSearchResults] = useState<VatanMessage[]>([]);
   const [groupMembers, setGroupMembers] = useState<VatanMember[]>([]);
   const [groupSettings, setGroupSettings] = useState<VatanGroupSettings | null>(null);
   const [apiToken, setApiToken] = useState<string | null>(null);
@@ -381,6 +384,19 @@ function AppContent() {
       showAlert(lang === 'fa' ? 'کاربر به گروه اضافه شد.' : 'User added to the group.'); setMemberUsername('');
     } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not add member.'); }
     finally { setBusy(false); }
+  };
+
+  const searchMessagesInRoom = async () => {
+    if (!apiToken || !activeRoom || messageSearchQuery.trim().length < 2) {
+      showAlert(lang === 'fa' ? 'برای جست‌وجو حداقل دو نویسه وارد کن.' : 'Enter at least two characters.');
+      return;
+    }
+    setBusy(true);
+    try {
+      setMessageSearchResults((await searchConversationMessages(apiToken, activeRoom.id, messageSearchQuery.trim())).messages);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not search messages.');
+    } finally { setBusy(false); }
   };
 
   const openGroupSettings = async () => {
@@ -794,8 +810,9 @@ function AppContent() {
           <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
@@ -807,6 +824,20 @@ function AppContent() {
               <TextInput value={roomDescription} onChangeText={setRoomDescription} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={180} />
               <Text style={[styles.demoNote, { color: c.muted }]}>{apiToken ? (lang === 'fa' ? 'این گفتگو روی سرور ساخته می‌شود.' : 'This conversation will be created on the server.') : (lang === 'fa' ? 'برای ساخت گفتگو باید ابتدا به API وصل شوی.' : 'Connect to the API before creating a conversation.')}</Text>
               <Pressable onPress={createRoom} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.create}</Text></Pressable>
+            </> : modal === 'searchMessages' ? <>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8 }}>
+                <TextInput value={messageSearchQuery} onChangeText={setMessageSearchQuery} onSubmitEditing={() => { void searchMessagesInRoom(); }} placeholder={lang === 'fa' ? 'عبارت مورد جست‌وجو…' : 'Search text…'} placeholderTextColor={c.muted} style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <Pressable onPress={() => { void searchMessagesInRoom(); }} style={[styles.memberAddButton, { backgroundColor: c.soft }]}><Ionicons name="search" size={18} color={c.primary} /></Pressable>
+              </View>
+              <ScrollView style={{ maxHeight: '65%' }} keyboardShouldPersistTaps="handled">
+                {messageSearchResults.map(message => <Pressable key={message.id} onPress={() => { setModal('chat'); }} style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 4 }}>
+                  <Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>
+                  <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                  <Text style={{ color: c.muted, fontSize: 10 }}>{message.createdAt}</Text>
+                </Pressable>)}
+                {messageSearchResults.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : (lang === 'fa' ? 'نتیجه‌ای پیدا نشد.' : 'No results found.')}</Text>}
+              </ScrollView>
+              <Pressable onPress={() => setModal('chat')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'groupSettings' ? <>
               <ScrollView style={{ maxHeight: '76%' }} keyboardShouldPersistTaps="handled">
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.name}</Text>
@@ -833,7 +864,8 @@ function AppContent() {
                   <TextInput value={String(groupSettings.slowModeSeconds)} onChangeText={v => setGroupSettings(current => current ? { ...current, slowModeSeconds: Math.max(0, Math.min(3600, Number.parseInt(v || '0', 10) || 0)) } : current)} keyboardType="number-pad" placeholder="0" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border }]} />
                 </>}
                 <Text style={[styles.fieldLabel, { color: c.muted, marginTop: 18 }]}>{lang === 'fa' ? 'اعضای گروه' : 'Group members'}</Text>
-                {groupMembers.map(member => {
+                <TextInput value={memberSearchQuery} onChangeText={setMemberSearchQuery} placeholder={lang === 'fa' ? 'جست‌وجوی عضو' : 'Search members'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                {groupMembers.filter(member => (member.displayName + member.username).toLowerCase().includes(memberSearchQuery.toLowerCase())).map(member => {
                   const currentRole = groupMembers.find(item => item.id === userId)?.role;
                   const canManage = currentRole === 'owner' || currentRole === 'admin';
                   return <View key={member.id} style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }}>

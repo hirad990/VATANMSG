@@ -189,7 +189,7 @@ function api_update_profile(): never
     }
 
     if (array_key_exists('avatarUrl', $data) || array_key_exists('avatar_url', $data)) {
-        $avatar = $data['avatarUrl'] ?? $data['avatar_url'];
+        $avatar = array_key_exists('avatarUrl', $data) ? $data['avatarUrl'] : $data['avatar_url'];
         if ($avatar !== null && (!is_string($avatar) || strlen($avatar) > 2048 || !filter_var($avatar, FILTER_VALIDATE_URL) || strtolower((string)parse_url($avatar, PHP_URL_SCHEME)) !== 'https')) {
             api_response(['error' => 'Avatar URL must be HTTPS or null'], 422);
         }
@@ -198,7 +198,7 @@ function api_update_profile(): never
     }
 
     if (array_key_exists('birthYear', $data) || array_key_exists('birth_year', $data)) {
-        $year = $data['birthYear'] ?? $data['birth_year'];
+        $year = array_key_exists('birthYear', $data) ? $data['birthYear'] : $data['birth_year'];
         if ($year !== null && (!is_numeric($year) || (int)$year < 1300 || (int)$year > (int)gmdate('Y'))) {
             api_response(['error' => 'Invalid birth year'], 422);
         }
@@ -207,7 +207,7 @@ function api_update_profile(): never
     }
 
     if (array_key_exists('birthCalendar', $data) || array_key_exists('birth_calendar', $data)) {
-        $calendar = $data['birthCalendar'] ?? $data['birth_calendar'];
+        $calendar = array_key_exists('birthCalendar', $data) ? $data['birthCalendar'] : $data['birth_calendar'];
         if ($calendar !== null && !in_array($calendar, ['solar_hijri', 'gregorian'], true)) {
             api_response(['error' => 'Invalid birth calendar'], 422);
         }

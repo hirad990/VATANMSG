@@ -806,8 +806,7 @@ try {
             api_login_account();
             break;
         case 'auth/demo':
-            api_login_demo();
-            break;
+            api_response(['error' => 'Demo sign-in is disabled. Use auth/register or auth/login.'], 410);
         case 'auth/me':
             api_get_me();
             break;

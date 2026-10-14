@@ -28,7 +28,8 @@
     "expo-file-system": "~19.0.17",
     "expo-sharing": "~14.0.7",
     "expo-notifications": "~0.32.12",
-    "expo-constants": "~18.0.13"
+    "expo-constants": "~18.0.13",
+    "@react-native-async-storage/async-storage": "2.2.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.10",

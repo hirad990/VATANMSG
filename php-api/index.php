@@ -473,7 +473,10 @@ function api_list_conversations(): never
     api_method('GET');
     $user = api_user();
     $stmt = api_db()->prepare(
-        'SELECT c.id, c.title, c.description, c.type, c.created_by, c.created_at,
+        'SELECT c.id, c.title,
+                (SELECT u.display_name FROM conversation_members cm2 JOIN users u ON u.id = cm2.user_id
+                 WHERE cm2.conversation_id = c.id AND cm2.user_id <> cm.user_id LIMIT 1) AS direct_title,
+                c.description, c.type, c.created_by, c.created_at,
                 cm.role,
                 (SELECT m.body FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1) AS last_message,
                 (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1) AS last_message_at
@@ -488,7 +491,7 @@ function api_list_conversations(): never
             'id' => (string)$row['id'],
             'kind' => $row['type'] === 'private' ? 'direct' : $row['type'],
             'type' => $row['type'],
-            'title' => $row['title'] ?? '',
+            'title' => $row['title'] ?? $row['direct_title'] ?? '',
             'description' => $row['description'] ?? null,
             'role' => $row['role'],
             'createdBy' => (string)$row['created_by'],
@@ -698,7 +701,8 @@ $path = trim($path, '/');
 try {
     if ($path === '' || $path === 'health') {
         api_method('GET');
-        api_response(['ok' => true, 'service' => 'vatanmsg-php-api', 'version' => '1.0.0']);
+        api_db()->query('SELECT 1');
+        api_response(['ok' => true, 'database' => true, 'service' => 'vatanmsg-php-api', 'version' => '1.1.0']);
     }
 
     switch ($path) {

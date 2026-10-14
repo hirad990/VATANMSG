@@ -4,7 +4,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { createChannel, createGroup, getMessages, listConversations, loginDemo, sendMessage, updateMyProfile, type VatanMessage } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, getMessages, listConversations, loginWithPassword, registerAccount, searchUsers, sendMessage, updateMyProfile, type VatanMessage, type VatanUser } from './src/services/api';
+import { BlurView } from 'expo-blur';
 
 
 function Text(props: React.ComponentProps<typeof NativeText>) {
@@ -38,8 +39,8 @@ const COPY = {
     appearance: 'ظاهر برنامه', dark: 'حالت تاریک', language: 'زبان برنامه', fa: 'فارسی', en: 'English',
     account: 'حساب کاربری', privacy: 'حریم خصوصی', notifications: 'اعلان‌ها', about: 'درباره وطن',
     save: 'ذخیره تغییرات', saved: 'تغییرات ذخیره شد', choosePhoto: 'انتخاب عکس پروفایل',
-    noContacts: 'هنوز مخاطبی وجود ندارد', demo: 'نسخه نمایشی', phone: 'ورود آزمایشی به سرور',
-    phoneHint: 'نام کاربری آزمایشی', continue: 'اتصال به سرور', backend: 'این ورود آزمایشی است و هنوز کد پیامکی ارسال نمی‌شود.',
+    noContacts: 'هنوز کاربری پیدا نشده؛ با نام کاربری جست‌وجو کن.', demo: 'حساب کاربری', phone: 'ورود / ثبت‌نام',
+    phoneHint: 'نام کاربری', continue: 'ادامه', backend: 'حساب خودت را بساز یا با رمز عبور وارد شو.',
     members: 'عضو', subscribers: 'دنبال‌کننده', newMessage: 'پیام جدید', profileHint: 'خودت را به دیگران معرفی کن',
     home: 'خانه', all: 'همه', privateNote: 'برای ذخیره پروفایل باید به API وارد شده باشی.'
   },
@@ -56,8 +57,8 @@ const COPY = {
     appearance: 'Appearance', dark: 'Dark mode', language: 'App language', fa: 'فارسی', en: 'English',
     account: 'Account', privacy: 'Privacy', notifications: 'Notifications', about: 'About Vatan',
     save: 'Save changes', saved: 'Changes saved', choosePhoto: 'Choose profile photo',
-    noContacts: 'No contacts yet', demo: 'DEMO', phone: 'Connect to API (demo)',
-    phoneHint: 'Demo username', continue: 'Connect', backend: 'Demo sign-in only; SMS verification is not enabled.',
+    noContacts: 'No users found yet. Search by username.', demo: 'ACCOUNT', phone: 'Sign in / Sign up',
+    phoneHint: 'Username', continue: 'Continue', backend: 'Create an account or sign in with your password.',
     members: 'members', subscribers: 'subscribers', newMessage: 'New message', profileHint: 'Let people know you',
     home: 'Home', all: 'All', privateNote: 'Sign in to the API to save profile changes.'
   }
@@ -66,6 +67,7 @@ const COPY = {
 function AppContent() {
   const [fontsLoaded] = useFonts({ Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black });
   const heroMotion = useRef(new Animated.Value(0)).current;
+  const tabMotion = useRef(new Animated.Value(1)).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [tab, setTab] = useState<Tab>('chats');
@@ -81,6 +83,11 @@ function AppContent() {
   const [search, setSearch] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginDisplayName, setLoginDisplayName] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginMode, setLoginMode] = useState<'login' | 'register'>('register');
+  const [contactsQuery, setContactsQuery] = useState('');
+  const [foundUsers, setFoundUsers] = useState<VatanUser[]>([]);
+  const [memberUsername, setMemberUsername] = useState('');
   const [apiToken, setApiToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
@@ -103,6 +110,11 @@ function AppContent() {
   useEffect(() => {
     Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
   }, [heroMotion]);
+
+  useEffect(() => {
+    tabMotion.setValue(0);
+    Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
+  }, [tab, tabMotion]);
   const filteredChats = useMemo(() => rooms.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [rooms, search]);
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);
@@ -128,10 +140,13 @@ function AppContent() {
     if (!safeUsername) { showAlert(lang === 'fa' ? 'یک نام کاربری وارد کن.' : 'Enter a demo username.'); return; }
     setBusy(true);
     try {
-      const result = await loginDemo({
-        username: safeUsername,
-        displayName: loginDisplayName.trim() || safeUsername
-      });
+      if (loginPassword.length < 8) {
+        showAlert(lang === 'fa' ? 'رمز عبور باید حداقل ۸ نویسه باشد.' : 'Password must be at least 8 characters.');
+        return;
+      }
+      const result = loginMode === 'register'
+        ? await registerAccount({ username: safeUsername, displayName: loginDisplayName.trim() || safeUsername, password: loginPassword })
+        : await loginWithPassword({ username: safeUsername, password: loginPassword });
       setApiToken(result.token);
       setUserId(result.user.id);
       setUsername(result.user.username);
@@ -141,7 +156,8 @@ function AppContent() {
       setCalendar(result.user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
       await loadConversations(result.token);
       setModal(null);
-      showAlert(lang === 'fa' ? 'به API وطن وصل شدی. این ورود آزمایشی است.' : 'Connected to Vatan API using demo sign-in.');
+      setLoginPassword('');
+      showAlert(lang === 'fa' ? 'با موفقیت وارد وطن شدی.' : 'You are signed in to Vatan.');
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'API sign-in failed.');
     } finally {
@@ -212,6 +228,37 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const searchForUsers = async () => {
+    if (!apiToken) { setModal('login'); return; }
+    if (contactsQuery.trim().length < 2) { showAlert(lang === 'fa' ? 'حداقل دو نویسه وارد کن.' : 'Enter at least two characters.'); return; }
+    setBusy(true);
+    try { setFoundUsers((await searchUsers(apiToken, contactsQuery.trim())).users); }
+    catch (error) { showAlert(error instanceof Error ? error.message : 'Could not search users.'); }
+    finally { setBusy(false); }
+  };
+
+  const startDirectChat = async (person: VatanUser) => {
+    if (!apiToken) { setModal('login'); return; }
+    setBusy(true);
+    try {
+      const conversation = (await createDirectConversation(apiToken, person.username)).conversation;
+      const room: Room = { id: conversation.id, title: conversation.title || person.displayName, subtitle: '@' + person.username, icon: 'person', kind: 'direct' };
+      setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
+      setTab('chats'); setActiveRoom(room); setMessages([]); setMessageDraft(''); setModal('chat');
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not start chat.'); }
+    finally { setBusy(false); }
+  };
+
+  const inviteMember = async () => {
+    if (!apiToken || !activeRoom || activeRoom.kind !== 'group' || !memberUsername.trim()) return;
+    setBusy(true);
+    try {
+      await addConversationMember(apiToken, activeRoom.id, memberUsername.trim());
+      showAlert(lang === 'fa' ? 'کاربر به گروه اضافه شد.' : 'User added to the group.'); setMemberUsername('');
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not add member.'); }
+    finally { setBusy(false); }
   };
 
   const openRoom = (room: Room) => {
@@ -352,13 +399,23 @@ function AppContent() {
 
   const renderContacts = () => (
     <>
-      <View style={[styles.collectionHero, { backgroundColor: c.soft, alignItems: 'center' }]}>
+      <View style={[styles.collectionHero, { backgroundColor: c.soft, alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
         <Avatar icon="people" color={c.primary} size={68} />
         <Text style={[styles.pageTitle, { color: c.text }]}>{t.contacts}</Text>
-        <Text style={[styles.pageSubtitle, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'مخاطبینت بعد از اجازه دسترسی و اتصال سرویس همگام‌سازی نمایش داده می‌شوند.' : 'Contacts will appear after permission and contact-sync services are configured.'}</Text>
-        <Pressable onPress={() => showAlert(lang === 'fa' ? 'همگام‌سازی مخاطبین در مرحله بعد اضافه می‌شود.' : 'Contact sync will be added in a later stage.')} style={[styles.secondaryButton, { backgroundColor: c.surface, marginTop: 16 }]}><Ionicons name="sync-outline" size={18} color={c.primary} /><Text style={[styles.secondaryButtonText, { color: c.primary }]}>{lang === 'fa' ? 'همگام‌سازی مخاطبین' : 'Sync contacts'}</Text></Pressable>
+        <Text style={[styles.pageSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'کاربرها را با نام کاربری پیدا کن و مستقیم پیام بده.' : 'Find people by username and start a direct conversation.'}</Text>
+        <View style={[styles.searchBox, { width: '100%', marginTop: 16, marginBottom: 0, backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <TextInput value={contactsQuery} onChangeText={setContactsQuery} onSubmitEditing={() => { void searchForUsers(); }} placeholder={lang === 'fa' ? 'نام کاربری یا نام نمایشی' : 'Username or display name'} placeholderTextColor={c.muted} style={[styles.searchInput, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]} returnKeyType="search" />
+          <Pressable onPress={() => { void searchForUsers(); }}><Ionicons name="search" size={20} color={c.primary} /></Pressable>
+        </View>
       </View>
-      <Text style={[styles.emptyHint, { color: c.muted }]}>{t.noContacts}</Text>
+      <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
+        {foundUsers.map(person => <Pressable key={person.id} onPress={() => { void startDirectChat(person); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
+          <Avatar icon="person" color={c.primary} uri={person.avatarUrl} />
+          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></View>
+          <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} />
+        </Pressable>)}
+        {foundUsers.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : t.noContacts}</Text>}
+      </View>
     </>
   );
 
@@ -418,26 +475,29 @@ function AppContent() {
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {tab === 'chats' && renderHome()}
-        {tab === 'contacts' && renderContacts()}
-        {tab === 'groups' && renderCollection('group')}
-        {tab === 'channels' && renderCollection('channel')}
-        {tab === 'settings' && renderSettings()}
+        <Animated.View style={{ opacity: tabMotion, transform: [{ translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [9, 0] }) }] }}>
+          {tab === 'chats' && renderHome()}
+          {tab === 'contacts' && renderContacts()}
+          {tab === 'groups' && renderCollection('group')}
+          {tab === 'channels' && renderCollection('channel')}
+          {tab === 'settings' && renderSettings()}
+        </Animated.View>
       </ScrollView>
-      <View style={[styles.bottomNav, { backgroundColor: c.surface, borderTopColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+      <View style={[styles.bottomNav, { backgroundColor: dark ? 'rgba(19,27,46,0.78)' : 'rgba(255,255,255,0.82)', borderTopColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <BlurView intensity={dark ? 45 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         {navItems.map(item => {
           const active = tab === item.key;
-          return <Pressable key={item.key} onPress={() => setTab(item.key)} style={styles.navItem}>
+          return <Pressable key={item.key} onPress={() => setTab(item.key)} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
             <View style={[styles.navIconWrap, active && { backgroundColor: c.soft }]}><Ionicons name={active ? item.active : item.icon} size={21} color={active ? c.primary : c.muted} /></View>
             <Text style={{ fontSize: 10, color: active ? c.primary : c.muted, fontWeight: active ? '800' : '500' }}>{labelForTab(item.key)}</Text>
           </Pressable>;
         })}
       </View>
 
-      <Modal visible={modal !== null} transparent animationType="slide" onRequestClose={() => setModal(null)}>
-        <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />
-          <View style={[styles.modalSheet, { backgroundColor: c.surface }]}>
+      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType="slide" onRequestClose={() => setModal(null)}>
+        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
+          <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
@@ -468,7 +528,7 @@ function AppContent() {
               <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
             </> : modal === 'chat' ? <>
-              <ScrollView style={{ maxHeight: 330 }} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
+              <ScrollView style={styles.fullChatMessages} contentContainerStyle={{ gap: 10, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '88%', backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
@@ -478,17 +538,26 @@ function AppContent() {
                   </View>;
                 })}
               </ScrollView>
+              {activeRoom?.kind === 'group' && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <TextInput value={memberUsername} onChangeText={setMemberUsername} autoCapitalize="none" placeholder={lang === 'fa' ? 'افزودن با نام کاربری' : 'Add member by username'} placeholderTextColor={c.muted} style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, marginBottom: 0 }]} />
+                <Pressable disabled={busy || !memberUsername.trim()} onPress={() => { void inviteMember(); }} style={[styles.memberAddButton, { backgroundColor: c.soft }]}><Ionicons name="person-add" size={18} color={c.primary} /></Pressable>
+              </View>}
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
                 <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…'} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
                 <Pressable disabled={busy || !messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: busy || !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name="send" size={18} color="#FFF" /></Pressable>
               </View>
             </> : <>
+              <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                {(['login', 'register'] as const).map(mode => <Pressable key={mode} onPress={() => setLoginMode(mode)} style={[styles.authModeItem, loginMode === mode && { backgroundColor: c.primary }]}><Text style={{ color: loginMode === mode ? '#FFF' : c.muted, fontWeight: '800' }}>{mode === 'login' ? (lang === 'fa' ? 'ورود' : 'Sign in') : (lang === 'fa' ? 'ثبت‌نام' : 'Sign up')}</Text></Pressable>)}
+              </View>
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.phoneHint}</Text>
-              <TextInput value={loginUsername} onChangeText={v => setLoginUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} autoCapitalize="none" placeholder="vatan_test_01" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
-              <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.displayName}</Text>
-              <TextInput value={loginDisplayName} onChangeText={setLoginDisplayName} placeholder={lang === 'fa' ? 'مثلاً کاربر وطن' : 'e.g. Vatan User'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} />
-              <Text style={[styles.demoNote, { color: c.muted }]}>{t.backend}{' '}{lang === 'fa' ? 'نام کاربری باید جدید باشد.' : 'Choose a new username.'}</Text>
-              <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.continue}</Text></Pressable>
+              <TextInput value={loginUsername} onChangeText={v => setLoginUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} autoCapitalize="none" autoCorrect={false} placeholder="vatan_user" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
+              {loginMode === 'register' && <><Text style={[styles.fieldLabel, { color: c.muted }]}>{t.displayName}</Text>
+              <TextInput value={loginDisplayName} onChangeText={setLoginDisplayName} placeholder={lang === 'fa' ? 'مثلاً کاربر وطن' : 'e.g. Vatan User'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} /></>}
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'رمز عبور (حداقل ۸ نویسه)' : 'Password (8+ characters)'}</Text>
+              <TextInput value={loginPassword} onChangeText={setLoginPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="••••••••" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} onSubmitEditing={() => { void loginToApi(); }} />
+              <Text style={[styles.demoNote, { color: c.muted }]}>{t.backend}</Text>
+              <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به حساب' : 'Sign in') : (lang === 'fa' ? 'ساخت حساب' : 'Create account'))}</Text></Pressable>
             </>}
             <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
           </View>
@@ -504,6 +573,14 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  bottomNav: { minHeight: 78, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 14 : 9, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#172033', shadowOpacity: 0.07, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 12 },
+  navItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 15 },
+  navIconWrap: { width: 44, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  fullChatSheet: { flex: 1, width: '100%', maxHeight: '100%', height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: Platform.OS === 'ios' ? 54 : 20, paddingBottom: Platform.OS === 'ios' ? 28 : 16, paddingHorizontal: 16 },
+  fullChatMessages: { flex: 1, maxHeight: undefined },
+  memberAddButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  authModeSwitch: { borderRadius: 14, padding: 4, gap: 4, marginBottom: 10 },
+  authModeItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 10 },
   header: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, alignItems: 'center', gap: 12 },
   brandSmall: { fontSize: 25, fontWeight: '900', letterSpacing: -0.6 },
   headerSub: { fontSize: 11, marginTop: 2 },

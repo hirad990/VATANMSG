@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -256,6 +256,16 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const signOutEverywhere = async () => {
+    const token = apiToken;
+    setBusy(true);
+    try { if (token) await logoutAllSessions(token); }
+    catch (error) { showAlert(error instanceof Error ? error.message : 'Could not revoke other sessions.'); return; }
+    finally { setBusy(false); }
+    await clearSavedSession().catch(() => undefined);
+    setApiToken(null); setUserId(null); setRooms([]); setMessages([]); setActiveRoom(null); setModal(null);
   };
 
   const signOut = async () => {
@@ -542,6 +552,7 @@ function AppContent() {
     };
   }, [modal, apiToken, activeRoom?.id]);
   const labelForTab = (x: Tab) => t[x];
+  const canManageGroup = groupMembers.some(member => member.id === userId && ['owner', 'admin'].includes(member.role));
 
   const Header = ({ title, subtitle }: { title: string; subtitle?: string }) => (
     <View style={[styles.header, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
@@ -692,6 +703,7 @@ function AppContent() {
         ))}
       </View>
       <Pressable onPress={signOut} disabled={busy} style={[styles.loginButton, { borderColor: c.border }]}><Ionicons name="log-out-outline" size={19} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'خروج از حساب' : 'Sign out'}</Text></Pressable>
+      <Pressable onPress={signOutEverywhere} disabled={busy} style={[styles.loginButton, { borderColor: c.border, marginTop: 8 }]}><Ionicons name="phone-portrait-outline" size={19} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'خروج از همه دستگاه‌ها' : 'Sign out all devices'}</Text></Pressable>
       {!!saved && <Text style={{ textAlign: 'center', color: c.primary, marginTop: 12 }}>{t.saved}</Text>}
     </>
   );
@@ -798,9 +810,9 @@ function AppContent() {
             </> : modal === 'groupSettings' ? <>
               <ScrollView style={{ maxHeight: '76%' }} keyboardShouldPersistTaps="handled">
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.name}</Text>
-                <TextInput value={roomName} onChangeText={setRoomName} maxLength={100} placeholder={t.name} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <TextInput value={roomName} onChangeText={setRoomName} maxLength={100} editable={canManageGroup} placeholder={t.name} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
-                <TextInput value={roomDescription} onChangeText={setRoomDescription} maxLength={280} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <TextInput value={roomDescription} onChangeText={setRoomDescription} maxLength={280} editable={canManageGroup} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'تم گروه' : 'Group theme'}</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                   {(['violet','blue','green','rose','amber','midnight','ocean'] as const).map((key, index) => {
@@ -808,7 +820,7 @@ function AppContent() {
                     return <Pressable key={key} onPress={() => setGroupSettings(current => current ? { ...current, themeKey: key } : current)} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: colors[index], borderWidth: groupSettings?.themeKey === key ? 3 : 1, borderColor: groupSettings?.themeKey === key ? c.text : 'transparent' }}><Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>{key}</Text></Pressable>;
                   })}
                 </View>
-                {groupSettings && <>
+                {groupSettings && canManageGroup && <>
                   <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                     <Text style={[styles.settingLabel, { color: c.text }]}>{lang === 'fa' ? 'اعضای عادی بتوانند پیام بدهند' : 'Members can send messages'}</Text>
                     <Switch value={groupSettings.memberCanSend} onValueChange={v => setGroupSettings(current => current ? { ...current, memberCanSend: v } : current)} trackColor={{ true: c.primary, false: c.border }} />
@@ -838,7 +850,7 @@ function AppContent() {
                   </View>;
                 })}
               </ScrollView>
-              <Pressable disabled={busy} onPress={() => { void saveGroupSettings(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
+              {canManageGroup && <Pressable disabled={busy} onPress={() => { void saveGroupSettings(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>}
               <Pressable onPress={() => setModal('chat')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'profile' ? <>
               <Pressable onPress={pickPhoto} style={{ alignItems: 'center', marginBottom: 18 }}>

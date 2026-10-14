@@ -1,6 +1,30 @@
 <?php
 declare(strict_types=1);
 
+// CORS: allow the local Expo web dev server and the production web app.
+$allowedOrigins = [
+    'http://localhost:8081',
+    'http://127.0.0.1:8081',
+    'http://localhost:19006',
+    'http://127.0.0.1:19006',
+    'https://binercraft.ir',
+    'https://www.binercraft.ir',
+];
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if (in_array($origin, $allowedOrigins, true)) {
+    header('Access-Control-Allow-Origin: ' . $origin);
+    header('Vary: Origin');
+}
+header('Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Max-Age: 86400');
+
+// Preflight must exit before routing/authentication.
+if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -14,7 +38,13 @@ function api_response(array $data, int $status = 200): never
 
 function api_method(string ...$allowed): void
 {
-    
+    $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+    if (!in_array($method, $allowed, true)) {
+        header('Allow: ' . implode(', ', $allowed));
+        api_response(['error' => 'Method not allowed'], 405);
+    }
+}
+
 function api_search_users(): never
 {
     api_method('GET');
@@ -237,13 +267,6 @@ function api_message_by_id(int $id): array
     ];
 }
 
-
-$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
-    if (!in_array($method, $allowed, true)) {
-        header('Allow: ' . implode(', ', $allowed));
-        api_response(['error' => 'Method not allowed'], 405);
-    }
-}
 
 function api_input(): array
 {

@@ -1093,6 +1093,19 @@ function api_upload_media(): never
     if ($membership['type'] === 'channel' && !in_array($membership['role'], ['owner','admin'], true)) {
         api_response(['error' => 'Only channel admins can upload media'], 403);
     }
+    if ($membership['type'] === 'group' && !in_array($membership['role'], ['owner','admin'], true)) {
+        $setting = api_db()->prepare('SELECT member_can_send, slow_mode_seconds FROM conversation_settings WHERE conversation_id = ?');
+        $setting->execute([$conversationId]);
+        $groupSettings = $setting->fetch() ?: ['member_can_send' => 1, 'slow_mode_seconds' => 0];
+        if (!(bool)$groupSettings['member_can_send']) api_response(['error' => 'Sending media is disabled for members in this group'], 403);
+        $slowMode = (int)$groupSettings['slow_mode_seconds'];
+        if ($slowMode > 0) {
+            $last = api_db()->prepare('SELECT created_at FROM messages WHERE conversation_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1');
+            $last->execute([$conversationId, $user['id']]);
+            $lastSent = $last->fetchColumn();
+            if ($lastSent && strtotime((string)$lastSent . ' UTC') > time() - $slowMode) api_response(['error' => 'Slow mode is enabled. Wait before uploading another file.'], 429);
+        }
+    }
     if (!isset($_FILES['file']) || !is_array($_FILES['file'])) api_response(['error' => 'Choose a file to upload'], 422);
     $file = $_FILES['file'];
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) {

@@ -16,7 +16,7 @@ PHP extensions required: `pdo_mysql`, `mbstring`. HTTPS must be enabled.
 
 ## API base URL
 
-The mobile app uses `https://binercraft.ir/api` by default. Override with `EXPO_PUBLIC_VATAN_API_URL` only for a different deployment.
+The mobile app currently calls `https://binercraft.ir/api` directly.
 
 ## Routes
 

@@ -11,7 +11,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -449,6 +449,25 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const leaveCurrentGroup = async () => {
+    if (!apiToken || !activeRoom) return;
+    const role = groupMembers.find(member => member.id === userId)?.role;
+    if (role === 'owner') {
+      showAlert(lang === 'fa' ? 'قبل از خروج، مالکیت گروه را به عضو دیگری منتقل کن.' : 'Transfer ownership before leaving the group.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await leaveConversation(apiToken, activeRoom.id);
+      setRooms(previous => previous.filter(room => room.id !== activeRoom.id));
+      setActiveRoom(null);
+      setModal(null);
+      setTab('groups');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not leave group.');
+    } finally { setBusy(false); }
   };
 
   const saveGroupSettings = async () => {
@@ -930,6 +949,7 @@ function AppContent() {
                 </Pressable>)}
                 {messageSearchResults.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : (lang === 'fa' ? 'نتیجه‌ای پیدا نشد.' : 'No results found.')}</Text>}
               </ScrollView>
+              <Pressable disabled={busy || groupMembers.some(member => member.id === userId && member.role === 'owner')} onPress={() => { void leaveCurrentGroup(); }} style={[styles.cancelButton, { opacity: groupMembers.some(member => member.id === userId && member.role === 'owner') ? 0.5 : 1 }]}><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'خروج از گروه' : 'Leave group'}</Text></Pressable>
               <Pressable onPress={() => setModal('chat')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'groupSettings' ? <>
               <ScrollView style={{ maxHeight: '76%' }} keyboardShouldPersistTaps="handled">
@@ -937,6 +957,8 @@ function AppContent() {
                 <TextInput value={roomName} onChangeText={setRoomName} maxLength={100} editable={canManageGroup} placeholder={t.name} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
                 <TextInput value={roomDescription} onChangeText={setRoomDescription} maxLength={280} editable={canManageGroup} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'آدرس HTTPS عکس گروه (اختیاری)' : 'Group avatar HTTPS URL (optional)'}</Text>
+                <TextInput value={groupSettings?.avatarUrl ?? ''} onChangeText={v => setGroupSettings(current => current ? { ...current, avatarUrl: v.trim() || null } : current)} editable={canManageGroup} autoCapitalize="none" placeholder="https://…" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'تم گروه' : 'Group theme'}</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
                   {(['violet','blue','green','rose','amber','midnight','ocean'] as const).map((key, index) => {

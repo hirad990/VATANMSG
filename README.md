@@ -9,7 +9,7 @@ npm install
 npx expo start
 ```
 
-The API client defaults to `https://binercraft.ir/api`. To override it for another environment, set `EXPO_PUBLIC_VATAN_API_URL` in the Expo environment.
+The API client is configured to call `https://binercraft.ir/api` directly.
 
 ## PHP API deployment
 

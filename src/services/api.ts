@@ -31,6 +31,8 @@ export type VatanMessage = {
   status?: 'sending' | 'sent' | 'failed';
   clientMessageId?: string;
   attachments?: VatanAttachment[];
+  readCount?: number;
+  deliveredCount?: number;
 };
 
 type AuthResponse = { token: string; user: VatanUser };
@@ -102,7 +104,9 @@ function normalizeMessage(value: any): VatanMessage {
     avatarUrl: value.avatarUrl ?? value.avatar_url ?? null,
     replyToId: value.replyToId == null && value.reply_to_id == null ? null : String(value.replyToId ?? value.reply_to_id),
     clientMessageId: value.clientMessageId ?? value.client_message_id ?? undefined,
-    attachments: Array.isArray(value.attachments) ? value.attachments : []
+    attachments: Array.isArray(value.attachments) ? value.attachments : [],
+    readCount: Number(value.readCount ?? 0),
+    deliveredCount: Number(value.deliveredCount ?? 0)
   };
 }
 

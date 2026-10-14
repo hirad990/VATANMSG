@@ -781,6 +781,198 @@ function api_get_messages(): never
     api_response(['messages' => $messages]);
 }
 
+
+function api_update_conversation_settings(): never
+{
+    api_method('PATCH', 'POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+    $membership = api_require_membership((int)$id, (int)$user['id']);
+    if (!in_array($membership['role'], ['owner', 'admin'], true) || $membership['type'] === 'private') {
+        api_response(['error' => 'Only group owners/admins can manage group settings'], 403);
+    }
+
+    $sets = [];
+    $values = [];
+    if (array_key_exists('title', $data)) {
+        $title = trim((string)$data['title']);
+        if ($title === '' || mb_strlen($title) > 100) api_response(['error' => 'Title must be 1-100 characters'], 422);
+        $sets[] = 'title = ?'; $values[] = $title;
+    }
+    if (array_key_exists('description', $data)) {
+        $description = trim((string)$data['description']);
+        if (mb_strlen($description) > 280) api_response(['error' => 'Description is too long'], 422);
+        $sets[] = 'description = ?'; $values[] = $description === '' ? null : $description;
+    }
+    if (array_key_exists('avatarUrl', $data)) {
+        $avatar = $data['avatarUrl'];
+        if ($avatar !== null && (!is_string($avatar) || strlen($avatar) > 2048 || !filter_var($avatar, FILTER_VALIDATE_URL) || strtolower((string)parse_url($avatar, PHP_URL_SCHEME)) !== 'https')) {
+            api_response(['error' => 'Group avatar must be an HTTPS URL or null'], 422);
+        }
+        $sets[] = 'avatar_url = ?'; $values[] = $avatar;
+    }
+
+    $settings = [];
+    if (array_key_exists('themeKey', $data)) {
+        $theme = (string)$data['themeKey'];
+        if (!in_array($theme, ['violet','blue','green','rose','amber','midnight','ocean'], true)) api_response(['error' => 'Unsupported group theme'], 422);
+        $settings['theme_key'] = $theme;
+    }
+    if (array_key_exists('themeMode', $data)) {
+        $mode = (string)$data['themeMode'];
+        if (!in_array($mode, ['light','dark','system'], true)) api_response(['error' => 'Invalid theme mode'], 422);
+        $settings['theme_mode'] = $mode;
+    }
+    foreach (['memberCanSend' => 'member_can_send', 'memberCanInvite' => 'member_can_invite', 'memberCanPin' => 'member_can_pin'] as $input => $column) {
+        if (array_key_exists($input, $data)) {
+            if (!is_bool($data[$input]) && !in_array($data[$input], [0,1,'0','1'], true)) api_response(['error' => 'Invalid group permission'], 422);
+            $settings[$column] = (int)(bool)$data[$input];
+        }
+    }
+    if (array_key_exists('slowModeSeconds', $data)) {
+        $slow = filter_var($data['slowModeSeconds'], FILTER_VALIDATE_INT);
+        if ($slow === false || $slow < 0 || $slow > 3600) api_response(['error' => 'Slow mode must be between 0 and 3600 seconds'], 422);
+        $settings['slow_mode_seconds'] = $slow;
+    }
+
+    $pdo = api_db();
+    if ($sets) {
+        $values[] = $id;
+        $pdo->prepare('UPDATE conversations SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($values);
+    }
+    if ($settings) {
+        $columns = array_keys($settings);
+        $insertColumns = array_merge(['conversation_id'], $columns);
+        $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
+        $updates = implode(', ', array_map(fn($column) => $column . ' = VALUES(' . $column . ')', $columns));
+        $values = array_merge([(int)$id], array_values($settings));
+        $pdo->prepare('INSERT INTO conversation_settings (' . implode(', ', $insertColumns) . ') VALUES (' . $placeholders . ') ON DUPLICATE KEY UPDATE ' . $updates)->execute($values);
+    }
+
+    $stmt = $pdo->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    api_response(['success' => true, 'settings' => [
+        'id' => (string)$row['id'], 'title' => $row['title'], 'description' => $row['description'],
+        'avatarUrl' => $row['avatar_url'], 'themeKey' => $row['theme_key'] ?? 'violet',
+        'themeMode' => $row['theme_mode'] ?? 'system',
+        'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
+        'memberCanInvite' => (bool)($row['member_can_invite'] ?? 0),
+        'memberCanPin' => (bool)($row['member_can_pin'] ?? 0),
+        'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0)
+    ]]);
+}
+
+function api_remove_conversation_member(): never
+{
+    api_method('POST', 'DELETE');
+    $user = api_user();
+    $data = api_input();
+    $conversationId = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $targetId = filter_var($data['user_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$conversationId || !$targetId || $conversationId < 1 || $targetId < 1) api_response(['error' => 'Valid conversation_id and user_id required'], 422);
+    $actor = api_require_membership((int)$conversationId, (int)$user['id']);
+    if (!in_array($actor['role'], ['owner','admin'], true)) api_response(['error' => 'Only owners and admins can remove members'], 403);
+    $target = api_require_membership((int)$conversationId, (int)$targetId);
+    if ($target['role'] === 'owner') api_response(['error' => 'Transfer ownership before removing the owner'], 409);
+    if ($actor['role'] === 'admin' && $target['role'] === 'admin') api_response(['error' => 'Admins cannot remove another admin'], 403);
+    $stmt = api_db()->prepare('DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?');
+    $stmt->execute([$conversationId, $targetId]);
+    api_response(['success' => true]);
+}
+
+function api_set_conversation_member_role(): never
+{
+    api_method('PATCH', 'POST');
+    $user = api_user();
+    $data = api_input();
+    $conversationId = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $targetId = filter_var($data['user_id'] ?? null, FILTER_VALIDATE_INT);
+    $role = (string)($data['role'] ?? '');
+    if (!$conversationId || !$targetId || $conversationId < 1 || $targetId < 1 || !in_array($role, ['admin','member'], true)) api_response(['error' => 'Valid member and role required'], 422);
+    $actor = api_require_membership((int)$conversationId, (int)$user['id']);
+    if ($actor['role'] !== 'owner') api_response(['error' => 'Only the owner can change admin roles'], 403);
+    $target = api_require_membership((int)$conversationId, (int)$targetId);
+    if ($target['role'] === 'owner') api_response(['error' => 'The owner role can only be changed by transferring ownership'], 409);
+    api_db()->prepare('UPDATE conversation_members SET role = ? WHERE conversation_id = ? AND user_id = ?')->execute([$role, $conversationId, $targetId]);
+    api_response(['success' => true, 'role' => $role]);
+}
+
+function api_transfer_conversation_ownership(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $conversationId = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $targetId = filter_var($data['user_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$conversationId || !$targetId || $conversationId < 1 || $targetId < 1 || $targetId === (int)$user['id']) api_response(['error' => 'Select another valid group member'], 422);
+    $actor = api_require_membership((int)$conversationId, (int)$user['id']);
+    if ($actor['role'] !== 'owner' || $actor['type'] === 'private') api_response(['error' => 'Only the group owner can transfer ownership'], 403);
+    $target = api_require_membership((int)$conversationId, (int)$targetId);
+    $pdo = api_db();
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("UPDATE conversation_members SET role = 'admin' WHERE conversation_id = ? AND user_id = ?")->execute([$conversationId, $user['id']]);
+        $pdo->prepare("UPDATE conversation_members SET role = 'owner' WHERE conversation_id = ? AND user_id = ?")->execute([$conversationId, $targetId]);
+        $pdo->prepare('UPDATE conversations SET created_by = ? WHERE id = ?')->execute([$targetId, $conversationId]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    api_response(['success' => true, 'newOwnerId' => (string)$targetId]);
+}
+
+function api_toggle_message_reaction(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $messageId = filter_var($data['message_id'] ?? null, FILTER_VALIDATE_INT);
+    $reaction = (string)($data['reaction'] ?? '');
+    if (!$messageId || $messageId < 1 || !in_array($reaction, ['👍','❤️','😂','😮','😢','🔥','🎉','👎'], true)) api_response(['error' => 'Unsupported reaction'], 422);
+    $stmt = api_db()->prepare('SELECT conversation_id FROM messages WHERE id = ? AND deleted_at IS NULL LIMIT 1');
+    $stmt->execute([$messageId]);
+    $message = $stmt->fetch();
+    if (!$message) api_response(['error' => 'Message not found'], 404);
+    api_require_membership((int)$message['conversation_id'], (int)$user['id']);
+    $stmt = api_db()->prepare('SELECT 1 FROM message_reactions WHERE message_id = ? AND user_id = ? AND reaction = ?');
+    $stmt->execute([$messageId, $user['id'], $reaction]);
+    if ($stmt->fetch()) {
+        $pdo = api_db();
+        $pdo->prepare('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND reaction = ?')->execute([$messageId, $user['id'], $reaction]);
+        $active = false;
+    } else {
+        api_db()->prepare('INSERT INTO message_reactions (message_id, user_id, reaction) VALUES (?, ?, ?)')->execute([$messageId, $user['id'], $reaction]);
+        $active = true;
+    }
+    $stmt = api_db()->prepare('SELECT reaction, COUNT(*) AS count FROM message_reactions WHERE message_id = ? GROUP BY reaction');
+    $stmt->execute([$messageId]);
+    api_response(['success' => true, 'active' => $active, 'reactions' => $stmt->fetchAll()]);
+}
+
+function api_mark_messages_read(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $conversationId = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $lastMessageId = filter_var($data['last_message_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$conversationId || !$lastMessageId || $conversationId < 1 || $lastMessageId < 1) api_response(['error' => 'Valid conversation_id and last_message_id required'], 422);
+    api_require_membership((int)$conversationId, (int)$user['id']);
+    $pdo = api_db();
+    $stmt = $pdo->prepare(
+        'INSERT INTO message_receipts (message_id, user_id, delivered_at, read_at)
+         SELECT id, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP() FROM messages
+         WHERE conversation_id = ? AND id <= ? AND sender_id <> ? AND deleted_at IS NULL
+         ON DUPLICATE KEY UPDATE delivered_at = COALESCE(delivered_at, UTC_TIMESTAMP()), read_at = COALESCE(read_at, UTC_TIMESTAMP())'
+    );
+    $stmt->execute([$user['id'], $conversationId, $lastMessageId, $user['id']]);
+    api_response(['success' => true]);
+}
+
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 if ($method === 'OPTIONS') {
     http_response_code(204);
@@ -836,6 +1028,24 @@ try {
             break;
         case 'conversations/add-member':
             api_add_conversation_member();
+            break;
+        case 'conversations/manage':
+            api_update_conversation_settings();
+            break;
+        case 'conversations/remove-member':
+            api_remove_conversation_member();
+            break;
+        case 'conversations/member-role':
+            api_set_conversation_member_role();
+            break;
+        case 'conversations/transfer-ownership':
+            api_transfer_conversation_ownership();
+            break;
+        case 'messages/react':
+            api_toggle_message_reaction();
+            break;
+        case 'messages/read':
+            api_mark_messages_read();
             break;
         case 'conversations/members':
             api_conversation_members();

@@ -7,11 +7,37 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false
+  })
+});
+
+async function registerPushForSession(token: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    if (!projectId) return; // Configure the EAS project ID in app.json to activate push delivery.
+    let permission = await Notifications.getPermissionsAsync();
+    if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+    if (!permission.granted) return;
+    const pushToken = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    await registerPushDevice(token, pushToken, Platform.OS === 'ios' ? 'ios' : 'android');
+  } catch {
+    // Push setup must not block login if permissions or push services are unavailable.
+  }
+}
 
 const SESSION_KEY = 'vatanmsg.session.v1';
 
@@ -224,6 +250,7 @@ function AppContent() {
           icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
           kind: item.kind
         })));
+        void registerPushForSession(token);
       } catch {
         await clearSavedSession().catch(() => undefined);
       } finally {
@@ -255,6 +282,7 @@ function AppContent() {
       setBirthYear(result.user.birthYear == null ? '' : String(result.user.birthYear));
       setCalendar(result.user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
       await loadConversations(result.token);
+      void registerPushForSession(result.token);
       setModal(null);
       setLoginPassword('');
       showAlert(lang === 'fa' ? 'با موفقیت وارد وطن شدی.' : 'You are signed in to Vatan.');

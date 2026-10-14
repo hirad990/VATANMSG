@@ -23,6 +23,7 @@ export type VatanMessage = {
   senderId: string;
   body: string;
   createdAt: string;
+  editedAt?: string | null;
   username: string;
   displayName: string;
 };
@@ -90,6 +91,7 @@ function normalizeMessage(value: any): VatanMessage {
     senderId: String(value.senderId ?? value.sender_id),
     body: String(value.body ?? ''),
     createdAt: String(value.createdAt ?? value.created_at ?? ''),
+    editedAt: value.editedAt ?? value.edited_at ?? null,
     username: String(value.username ?? ''),
     displayName: String(value.displayName ?? value.display_name ?? value.sender_name ?? '')
   };

@@ -409,12 +409,22 @@ function api_login_account(): never
     if ($username === '' || $password === '') api_response(['error' => 'نام کاربری و رمز عبور را وارد کن.'], 422);
 
     $pdo = api_db();
+    $usernameKey = mb_strtolower(mb_substr($username, 0, 64));
+    $ipKey = hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+    $attempts = $pdo->prepare('SELECT COUNT(*) FROM auth_login_attempts WHERE username_key = ? AND ip_key = ? AND was_successful = 0 AND attempted_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)');
+    $attempts->execute([$usernameKey, $ipKey]);
+    if ((int)$attempts->fetchColumn() >= 10) {
+        api_response(['error' => 'تلاش‌های ورود زیاد است؛ ۱۵ دقیقه دیگر دوباره امتحان کن.'], 429);
+    }
+
     $stmt = $pdo->prepare('SELECT id, username, password_hash, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE username = ? LIMIT 1');
     $stmt->execute([$username]);
     $user = $stmt->fetch();
     if (!$user || empty($user['password_hash']) || !password_verify($password, $user['password_hash'])) {
+        $pdo->prepare('INSERT INTO auth_login_attempts (username_key, ip_key, was_successful) VALUES (?, ?, 0)')->execute([$usernameKey, $ipKey]);
         api_response(['error' => 'نام کاربری یا رمز عبور اشتباه است.'], 401);
     }
+    $pdo->prepare('INSERT INTO auth_login_attempts (username_key, ip_key, was_successful) VALUES (?, ?, 1)')->execute([$usernameKey, $ipKey]);
     if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
         $update = $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
         $update->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
@@ -558,6 +568,14 @@ function api_logout(): never
     $stmt = api_db()->prepare('DELETE FROM api_tokens WHERE user_id = ? AND token_hash = ?');
     $stmt->execute([$user['id'], hash('sha256', (string)$token)]);
     api_response(['success' => true]);
+}
+
+function api_logout_all_sessions(): never
+{
+    api_method('POST');
+    $user = api_user();
+    api_db()->prepare('DELETE FROM api_tokens WHERE user_id = ?')->execute([$user['id']]);
+    api_response(['success' => true, 'sessionsRevoked' => true]);
 }
 
 function api_list_conversations(): never
@@ -1007,6 +1025,9 @@ try {
             break;
         case 'auth/logout':
             api_logout();
+            break;
+        case 'auth/logout-all':
+            api_logout_all_sessions();
             break;
         case 'conversations':
             if ($method === 'POST') {

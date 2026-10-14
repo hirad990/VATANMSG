@@ -300,7 +300,7 @@ function AppContent() {
 
   const renderHome = () => (
     <>
-      <View style={[styles.hero, { backgroundColor: dark ? '#211E4A' : '#EAE9FF' }]}>
+      <Animated.View style={[styles.hero, { backgroundColor: dark ? '#211E4A' : '#EAE9FF', opacity: heroMotion, transform: [{ translateY: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }] }]}>
         <Animated.View style={[styles.heroGlow, { backgroundColor: c.primary, opacity: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.13] }), transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
         <Text style={[styles.heroEyebrow, { color: c.primary }]}>{t.brand.toUpperCase()} · {t.demo}</Text>
         <Text style={[styles.heroTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{t.welcome}</Text>
@@ -313,7 +313,7 @@ function AppContent() {
             <Ionicons name="megaphone-outline" size={17} color={c.primary} /><Text style={[styles.secondaryButtonText, { color: c.primary }]}>{t.createChannel}</Text>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
       <View style={[styles.searchBox, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <Ionicons name="search" size={19} color={c.muted} />
         <TextInput value={search} onChangeText={setSearch} placeholder={t.search} placeholderTextColor={c.muted} style={[styles.searchInput, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]} />

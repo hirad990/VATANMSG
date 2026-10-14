@@ -45,6 +45,10 @@ The mobile app currently calls `https://binercraft.ir/api` directly.
 - `POST /messages/delete` — delete your own message, or a message as a conversation owner/admin
 - `POST /messages/react` — toggle a supported reaction on a message
 - `POST /messages/read` — record delivery/read receipts up to a message ID
+- `GET /messages/search?conversation_id=123&q=hello` — search message text in a conversation
+- `POST /media/upload` — authenticated image/video/document upload (25 MB maximum; server-side MIME validation)
+- `GET /media/download?id=123` — authenticated attachment download; membership is checked
+- `POST /push/register` — register an Expo push token for the current device
 
 Protected routes require `Authorization: Bearer <token>`.
 
@@ -52,7 +56,7 @@ Protected routes require `Authorization: Bearer <token>`.
 
 - Demo login is for development only and does not verify identity. Set `demo_login_enabled` to `false` before a public launch until a real authentication flow is configured.
 - User search, private conversation creation, membership management, message editing/deletion, and paginated message reads are available in this API, but the mobile screens still need to expose all of them.
-- This shared-hosting version still uses REST polling, not WebSocket push. The v2 migration prepares tables for media and push devices, but authenticated media upload/download and actual push delivery still require implementation and host configuration. Read receipts and reactions have API endpoints; read status is not yet surfaced throughout the UI. Blocking/reporting and end-to-end encryption are not implemented.
+- This shared-hosting version still uses REST polling, not WebSocket push. Media upload/download, reactions, message search, read receipts and Expo push dispatch are implemented in the API; the app exposes the related chat controls. Push notifications require an EAS project ID under `expo.extra.eas.projectId` in `app.json`, a native development/production build, notification permission, and cURL/outbound HTTPS on the PHP host. Until that project ID is configured and a native build is installed, push-token registration is intentionally skipped. Delivery receipts currently become available when a recipient opens the conversation; precise background delivery status depends on push-provider receipts and is not guaranteed. Blocking/reporting and end-to-end encryption are not implemented.
 - Never commit real passwords or bearer tokens. Restrict database user privileges and keep backups.
 
 

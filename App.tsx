@@ -115,6 +115,28 @@ function AppContent() {
     tabMotion.setValue(0);
     Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
   }, [tab, tabMotion]);
+
+  // Refresh conversation membership so newly invited group members see the room.
+  useEffect(() => {
+    if (!apiToken) return;
+    let cancelled = false;
+    const refreshConversations = async () => {
+      try {
+        const result = await listConversations(apiToken);
+        if (!cancelled) setRooms(result.conversations.map(item => ({
+          id: item.id,
+          title: item.title,
+          subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
+          icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
+          kind: item.kind
+        })));
+      } catch {
+        // Preserve the current list during temporary network interruptions.
+      }
+    };
+    const timer = setInterval(() => { void refreshConversations(); }, 8000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [apiToken, lang]);
   const filteredChats = useMemo(() => rooms.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [rooms, search]);
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);

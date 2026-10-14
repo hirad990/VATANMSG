@@ -354,6 +354,75 @@ function api_public_user(array $user): array
     ];
 }
 
+
+function api_issue_auth_token(int $userId, array $config): string
+{
+    $token = bin2hex(random_bytes(32));
+    $days = max(1, min(30, (int)($config['token_expiry_days'] ?? 7)));
+    $stmt = api_db()->prepare(
+        'INSERT INTO api_tokens (user_id, token_hash, expires_at)
+         VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY))'
+    );
+    $stmt->execute([$userId, hash('sha256', $token)]);
+    return $token;
+}
+
+function api_register_account(): never
+{
+    api_method('POST');
+    $data = api_input();
+    $username = trim((string)($data['username'] ?? ''));
+    $displayName = trim((string)($data['displayName'] ?? $data['display_name'] ?? ''));
+    $password = (string)($data['password'] ?? '');
+
+    if (!preg_match('/^[A-Za-z0-9_]{3,32}$/', $username)) {
+        api_response(['error' => 'نام کاربری باید ۳ تا ۳۲ حرف انگلیسی، عدد یا _ باشد.'], 422);
+    }
+    if ($displayName === '' || mb_strlen($displayName) > 60) {
+        api_response(['error' => 'نام نمایشی باید بین ۱ تا ۶۰ نویسه باشد.'], 422);
+    }
+    if (strlen($password) < 8 || strlen($password) > 72) {
+        api_response(['error' => 'رمز عبور باید حداقل ۸ و حداکثر ۷۲ بایت باشد.'], 422);
+    }
+
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+    $stmt->execute([$username]);
+    if ($stmt->fetch()) api_response(['error' => 'این نام کاربری قبلاً ثبت شده است.'], 409);
+
+    $stmt = $pdo->prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)');
+    $stmt->execute([$username, password_hash($password, PASSWORD_DEFAULT), $displayName]);
+    $userId = (int)$pdo->lastInsertId();
+    $token = api_issue_auth_token($userId, api_config());
+
+    $stmt = $pdo->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    api_response(['success' => true, 'token' => $token, 'user' => api_public_user($stmt->fetch())], 201);
+}
+
+function api_login_account(): never
+{
+    api_method('POST');
+    $data = api_input();
+    $username = trim((string)($data['username'] ?? ''));
+    $password = (string)($data['password'] ?? '');
+    if ($username === '' || $password === '') api_response(['error' => 'نام کاربری و رمز عبور را وارد کن.'], 422);
+
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id, username, password_hash, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE username = ? LIMIT 1');
+    $stmt->execute([$username]);
+    $user = $stmt->fetch();
+    if (!$user || empty($user['password_hash']) || !password_verify($password, $user['password_hash'])) {
+        api_response(['error' => 'نام کاربری یا رمز عبور اشتباه است.'], 401);
+    }
+    if (password_needs_rehash($user['password_hash'], PASSWORD_DEFAULT)) {
+        $update = $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+        $update->execute([password_hash($password, PASSWORD_DEFAULT), $user['id']]);
+    }
+    $token = api_issue_auth_token((int)$user['id'], api_config());
+    api_response(['success' => true, 'token' => $token, 'user' => api_public_user($user)]);
+}
+
 function api_login_demo(): never
 {
     api_method('POST');
@@ -730,6 +799,12 @@ try {
     }
 
     switch ($path) {
+        case 'auth/register':
+            api_register_account();
+            break;
+        case 'auth/login':
+            api_login_account();
+            break;
         case 'auth/demo':
             api_login_demo();
             break;

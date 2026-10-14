@@ -97,11 +97,18 @@ function normalizeMessage(value: any): VatanMessage {
   };
 }
 
-/** Development-only sign-in. This does not verify a phone number. */
-export async function loginDemo(profile: { username: string; displayName: string }) {
-  const result = await request<any>('/auth/demo', undefined, {
+export async function registerAccount(profile: { username: string; displayName: string; password: string }) {
+  const result = await request<any>('/auth/register', undefined, {
     method: 'POST',
     body: JSON.stringify(profile)
+  });
+  return { ...result, user: normalizeUser(result.user) } as AuthResponse;
+}
+
+export async function loginWithPassword(credentials: { username: string; password: string }) {
+  const result = await request<any>('/auth/login', undefined, {
+    method: 'POST',
+    body: JSON.stringify(credentials)
   });
   return { ...result, user: normalizeUser(result.user) } as AuthResponse;
 }

@@ -46,3 +46,17 @@ Protected routes require `Authorization: Bearer <token>`.
 - User search, private conversation creation, membership management, message editing/deletion, and paginated message reads are available in this API, but the mobile screens still need to expose all of them.
 - This shared-hosting version uses REST polling/manual refresh, not WebSocket push. Real SMS OTP, contact sync, media upload, push notifications, message read receipts, blocking/reporting, and end-to-end encryption are not implemented.
 - Never commit real passwords or bearer tokens. Restrict database user privileges and keep backups.
+
+
+## Username/password accounts
+
+New installations must use the latest `schema.sql`, which includes `users.password_hash`.
+For an existing cPanel/MariaDB database, run this one-time migration in phpMyAdmin after selecting the Vatan database:
+
+```sql
+ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL AFTER username;
+```
+
+The app now uses `POST /auth/register` and `POST /auth/login`. Passwords are stored with PHP's `password_hash()` and checked with `password_verify()`; the API never returns password hashes. The old `/auth/demo` endpoint is disabled. Existing demo accounts have no password hash, so they cannot sign in with a password; register a new username unless an administrator securely provisions a password for the existing account.
+
+Messages are saved in MariaDB. Members of a group can read its shared history, and the app polls for new messages and conversation membership. This is periodic REST refresh, not instant WebSocket delivery.

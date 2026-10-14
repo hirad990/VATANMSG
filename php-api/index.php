@@ -14,7 +14,231 @@ function api_response(array $data, int $status = 200): never
 
 function api_method(string ...$allowed): void
 {
-    $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+    
+function api_search_users(): never
+{
+    api_method('GET');
+    $user = api_user();
+    $query = trim((string)($_GET['q'] ?? ''));
+    if (mb_strlen($query) < 2 || mb_strlen($query) > 32) {
+        api_response(['users' => []]);
+    }
+    $like = '%' . addcslashes($query, '%_\\\\') . '%';
+    $stmt = api_db()->prepare(
+        'SELECT id, username, display_name, avatar_url
+         FROM users
+         WHERE id <> ? AND (username LIKE ? OR display_name LIKE ?)
+         ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, display_name ASC
+         LIMIT 30'
+    );
+    $stmt->execute([$user['id'], $like, $like, $query]);
+    $users = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $users[] = [
+            'id' => (string)$row['id'],
+            'username' => $row['username'],
+            'displayName' => $row['display_name'],
+            'avatarUrl' => $row['avatar_url'],
+        ];
+    }
+    api_response(['users' => $users]);
+}
+
+function api_create_direct_conversation(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $username = trim((string)($data['username'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_]{3,32}$/', $username)) {
+        api_response(['error' => 'Enter a valid username'], 422);
+    }
+
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+    $stmt->execute([$username]);
+    $target = $stmt->fetch();
+    if (!$target) {
+        api_response(['error' => 'User not found'], 404);
+    }
+    $targetId = (int)$target['id'];
+    if ($targetId === (int)$user['id']) {
+        api_response(['error' => 'You cannot start a chat with yourself'], 422);
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT c.id FROM conversations c
+         JOIN conversation_members a ON a.conversation_id = c.id AND a.user_id = ?
+         JOIN conversation_members b ON b.conversation_id = c.id AND b.user_id = ?
+         WHERE c.type = 'private'
+         LIMIT 1"
+    );
+    $stmt->execute([$user['id'], $targetId]);
+    $existing = $stmt->fetch();
+    if ($existing) {
+        api_response(['success' => true, 'conversation' => api_direct_summary((int)$existing['id'], (int)$user['id'])]);
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("INSERT INTO conversations (title, description, type, created_by) VALUES (NULL, NULL, 'private', ?)");
+        $stmt->execute([$user['id']]);
+        $id = (int)$pdo->lastInsertId();
+        $stmt = $pdo->prepare("INSERT INTO conversation_members (conversation_id, user_id, role) VALUES (?, ?, 'member'), (?, ?, 'member')");
+        $stmt->execute([$id, $user['id'], $id, $targetId]);
+        $pdo->commit();
+        api_response(['success' => true, 'conversation' => api_direct_summary($id, (int)$user['id'])], 201);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function api_direct_summary(int $conversationId, int $currentUserId): array
+{
+    $stmt = api_db()->prepare(
+        "SELECT c.id, c.type, c.created_at,
+                other.id AS other_id, other.username AS other_username,
+                other.display_name AS other_display_name, other.avatar_url AS other_avatar_url
+         FROM conversations c
+         JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = ?
+         JOIN conversation_members them ON them.conversation_id = c.id AND them.user_id <> ?
+         JOIN users other ON other.id = them.user_id
+         WHERE c.id = ? AND c.type = 'private' LIMIT 1"
+    );
+    $stmt->execute([$currentUserId, $currentUserId, $conversationId]);
+    $row = $stmt->fetch();
+    if (!$row) api_response(['error' => 'Conversation not found'], 404);
+    return [
+        'id' => (string)$row['id'], 'kind' => 'direct', 'type' => 'private',
+        'title' => $row['other_display_name'], 'description' => null,
+        'otherUser' => [
+            'id' => (string)$row['other_id'], 'username' => $row['other_username'],
+            'displayName' => $row['other_display_name'], 'avatarUrl' => $row['other_avatar_url']
+        ]
+    ];
+}
+
+function api_join_conversation(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id, type FROM conversations WHERE id = ? LIMIT 1');
+    $stmt->execute([$id]);
+    $conversation = $stmt->fetch();
+    if (!$conversation || $conversation['type'] === 'private') api_response(['error' => 'Group or channel not found'], 404);
+    $stmt = $pdo->prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?');
+    $stmt->execute([$id, $user['id']]);
+    if ($stmt->fetch()) api_response(['success' => true, 'alreadyMember' => true]);
+    $role = $conversation['type'] === 'channel' ? 'subscriber' : 'member';
+    $stmt = $pdo->prepare('INSERT INTO conversation_members (conversation_id, user_id, role) VALUES (?, ?, ?)');
+    $stmt->execute([$id, $user['id'], $role]);
+    api_response(['success' => true, 'alreadyMember' => false], 201);
+}
+
+function api_leave_conversation(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+    $membership = api_require_membership((int)$id, (int)$user['id']);
+    if ($membership['role'] === 'owner') api_response(['error' => 'Transfer ownership or delete the conversation before leaving'], 409);
+    $stmt = api_db()->prepare('DELETE FROM conversation_members WHERE conversation_id = ? AND user_id = ?');
+    $stmt->execute([$id, $user['id']]);
+    api_response(['success' => true]);
+}
+
+function api_add_conversation_member(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    $username = trim((string)($data['username'] ?? ''));
+    if (!$id || $id < 1 || !preg_match('/^[A-Za-z0-9_]{3,32}$/', $username)) {
+        api_response(['error' => 'Valid conversation_id and username required'], 422);
+    }
+    $membership = api_require_membership((int)$id, (int)$user['id']);
+    if (!in_array($membership['role'], ['owner', 'admin'], true)) api_response(['error' => 'Only owners and admins can add members'], 403);
+    $stmt = api_db()->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
+    $stmt->execute([$username]);
+    $target = $stmt->fetch();
+    if (!$target) api_response(['error' => 'User not found'], 404);
+    if ((int)$target['id'] === (int)$user['id']) api_response(['error' => 'You are already a member'], 409);
+    $stmt = api_db()->prepare('SELECT 1 FROM conversation_members WHERE conversation_id = ? AND user_id = ?');
+    $stmt->execute([$id, $target['id']]);
+    if ($stmt->fetch()) api_response(['error' => 'User is already a member'], 409);
+    $role = $membership['type'] === 'channel' ? 'subscriber' : 'member';
+    $stmt = api_db()->prepare('INSERT INTO conversation_members (conversation_id, user_id, role) VALUES (?, ?, ?)');
+    $stmt->execute([$id, $target['id'], $role]);
+    api_response(['success' => true], 201);
+}
+
+function api_edit_message(): never
+{
+    api_method('PATCH', 'POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['message_id'] ?? null, FILTER_VALIDATE_INT);
+    $body = trim((string)($data['body'] ?? ''));
+    $max = max(1, min(4000, (int)(api_config()['max_message_length'] ?? 4000)));
+    if (!$id || $id < 1 || $body === '' || mb_strlen($body) > $max) api_response(['error' => 'Valid message_id and body required'], 422);
+    $stmt = api_db()->prepare('SELECT id, conversation_id, sender_id FROM messages WHERE id = ? AND deleted_at IS NULL LIMIT 1');
+    $stmt->execute([$id]);
+    $message = $stmt->fetch();
+    if (!$message) api_response(['error' => 'Message not found'], 404);
+    api_require_membership((int)$message['conversation_id'], (int)$user['id']);
+    if ((int)$message['sender_id'] !== (int)$user['id']) api_response(['error' => 'You can only edit your own messages'], 403);
+    $stmt = api_db()->prepare('UPDATE messages SET body = ?, edited_at = UTC_TIMESTAMP() WHERE id = ?');
+    $stmt->execute([$body, $id]);
+    api_response(['success' => true, 'message' => api_message_by_id((int)$id)]);
+}
+
+function api_delete_message(): never
+{
+    api_method('POST', 'DELETE');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['message_id'] ?? $_GET['message_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid message_id required'], 422);
+    $stmt = api_db()->prepare('SELECT id, conversation_id, sender_id FROM messages WHERE id = ? AND deleted_at IS NULL LIMIT 1');
+    $stmt->execute([$id]);
+    $message = $stmt->fetch();
+    if (!$message) api_response(['error' => 'Message not found'], 404);
+    $membership = api_require_membership((int)$message['conversation_id'], (int)$user['id']);
+    if ((int)$message['sender_id'] !== (int)$user['id'] && !in_array($membership['role'], ['owner', 'admin'], true)) {
+        api_response(['error' => 'You cannot delete this message'], 403);
+    }
+    $stmt = api_db()->prepare('UPDATE messages SET deleted_at = UTC_TIMESTAMP(), body = ? WHERE id = ?');
+    $stmt->execute(['', $id]);
+    api_response(['success' => true]);
+}
+
+function api_message_by_id(int $id): array
+{
+    $stmt = api_db()->prepare(
+        'SELECT m.id, m.conversation_id, m.sender_id, u.username, u.display_name, m.body, m.created_at, m.edited_at
+         FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ? LIMIT 1'
+    );
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if (!$row) api_response(['error' => 'Message not found'], 404);
+    return [
+        'id' => (string)$row['id'], 'conversationId' => (string)$row['conversation_id'],
+        'senderId' => (string)$row['sender_id'], 'username' => $row['username'],
+        'displayName' => $row['display_name'], 'body' => $row['body'],
+        'createdAt' => $row['created_at'], 'editedAt' => $row['edited_at']
+    ];
+}
+
+
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
     if (!in_array($method, $allowed, true)) {
         header('Allow: ' . implode(', ', $allowed));
         api_response(['error' => 'Method not allowed'], 405);
@@ -496,8 +720,29 @@ try {
             }
             api_list_conversations();
             break;
+        case 'users/search':
+            api_search_users();
+            break;
+        case 'conversations/direct':
+            api_create_direct_conversation();
+            break;
+        case 'conversations/join':
+            api_join_conversation();
+            break;
+        case 'conversations/leave':
+            api_leave_conversation();
+            break;
+        case 'conversations/add-member':
+            api_add_conversation_member();
+            break;
         case 'conversations/members':
             api_conversation_members();
+            break;
+        case 'messages/edit':
+            api_edit_message();
+            break;
+        case 'messages/delete':
+            api_delete_message();
             break;
         case 'messages':
             if ($method === 'POST') {

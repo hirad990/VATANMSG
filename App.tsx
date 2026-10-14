@@ -407,6 +407,8 @@ function AppContent() {
     { key: 'settings', icon: 'settings-outline', active: 'settings' }
   ];
 
+  if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: '#F5F7FC', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: 32, fontWeight: '900', color: '#5B52E8' }}>وطن</Text></View>;
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />

@@ -195,7 +195,13 @@ function api_add_conversation_member(): never
         api_response(['error' => 'Valid conversation_id and username required'], 422);
     }
     $membership = api_require_membership((int)$id, (int)$user['id']);
-    if (!in_array($membership['role'], ['owner', 'admin'], true)) api_response(['error' => 'Only owners and admins can add members'], 403);
+    $canInvite = in_array($membership['role'], ['owner', 'admin'], true);
+    if (!$canInvite && $membership['type'] === 'group') {
+        $setting = api_db()->prepare('SELECT member_can_invite FROM conversation_settings WHERE conversation_id = ?');
+        $setting->execute([$id]);
+        $canInvite = (bool)$setting->fetchColumn();
+    }
+    if (!$canInvite) api_response(['error' => 'You do not have permission to add members'], 403);
     $stmt = api_db()->prepare('SELECT id FROM users WHERE username = ? LIMIT 1');
     $stmt->execute([$username]);
     $target = $stmt->fetch();
@@ -728,6 +734,21 @@ function api_send_message(): never
     $membership = api_require_membership((int)$conversationId, (int)$user['id']);
     if ($membership['type'] === 'channel' && !in_array($membership['role'], ['owner', 'admin'], true)) {
         api_response(['error' => 'Only channel admins can publish messages'], 403);
+    }
+    if ($membership['type'] === 'group' && !in_array($membership['role'], ['owner', 'admin'], true)) {
+        $setting = api_db()->prepare('SELECT member_can_send, slow_mode_seconds FROM conversation_settings WHERE conversation_id = ?');
+        $setting->execute([$conversationId]);
+        $groupSettings = $setting->fetch() ?: ['member_can_send' => 1, 'slow_mode_seconds' => 0];
+        if (!(bool)$groupSettings['member_can_send']) api_response(['error' => 'Sending messages is disabled for members in this group'], 403);
+        $slowMode = (int)$groupSettings['slow_mode_seconds'];
+        if ($slowMode > 0) {
+            $last = api_db()->prepare('SELECT created_at FROM messages WHERE conversation_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 1');
+            $last->execute([$conversationId, $user['id']]);
+            $lastSent = $last->fetchColumn();
+            if ($lastSent && strtotime((string)$lastSent . ' UTC') > time() - $slowMode) {
+                api_response(['error' => 'Slow mode is enabled. Wait before sending another message.'], 429);
+            }
+        }
     }
 
     $stmt = api_db()->prepare('INSERT INTO messages (conversation_id, sender_id, body) VALUES (?, ?, ?)');

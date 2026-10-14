@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, registerAccount, searchUsers, sendMessage, updateMyProfile, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, loginWithPassword, logout as logoutFromApi, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, transferConversationOwnership, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -105,7 +105,7 @@ function AppContent() {
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -117,6 +117,8 @@ function AppContent() {
   const [contactsQuery, setContactsQuery] = useState('');
   const [foundUsers, setFoundUsers] = useState<VatanUser[]>([]);
   const [memberUsername, setMemberUsername] = useState('');
+  const [groupMembers, setGroupMembers] = useState<VatanMember[]>([]);
+  const [groupSettings, setGroupSettings] = useState<VatanGroupSettings | null>(null);
   const [apiToken, setApiToken] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -366,6 +368,77 @@ function AppContent() {
       showAlert(lang === 'fa' ? 'کاربر به گروه اضافه شد.' : 'User added to the group.'); setMemberUsername('');
     } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not add member.'); }
     finally { setBusy(false); }
+  };
+
+  const openGroupSettings = async () => {
+    if (!apiToken || !activeRoom || activeRoom.kind !== 'group') return;
+    setBusy(true);
+    try {
+      const [settings, membersResult] = await Promise.all([
+        getConversationSettings(apiToken, activeRoom.id),
+        getConversationMembers(apiToken, activeRoom.id)
+      ]);
+      setGroupSettings(settings);
+      setGroupMembers(membersResult.members);
+      setRoomName(settings.title);
+      setRoomDescription(settings.description ?? '');
+      setModal('groupSettings');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not load group settings.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveGroupSettings = async () => {
+    if (!apiToken || !activeRoom || !groupSettings) return;
+    setBusy(true);
+    try {
+      const updated = await updateConversationSettings(apiToken, activeRoom.id, {
+        title: roomName.trim(),
+        description: roomDescription.trim(),
+        themeKey: groupSettings.themeKey,
+        themeMode: groupSettings.themeMode,
+        memberCanSend: groupSettings.memberCanSend,
+        memberCanInvite: groupSettings.memberCanInvite,
+        memberCanPin: groupSettings.memberCanPin,
+        slowModeSeconds: groupSettings.slowModeSeconds
+      });
+      setGroupSettings(updated);
+      const nextRoom = { ...activeRoom, title: updated.title, subtitle: updated.description || activeRoom.subtitle };
+      setActiveRoom(nextRoom);
+      setRooms(previous => previous.map(room => room.id === nextRoom.id ? nextRoom : room));
+      setModal('chat');
+      showAlert(lang === 'fa' ? 'تنظیمات گروه ذخیره شد.' : 'Group settings saved.');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not save group settings.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const actOnMember = async (member: VatanMember, action: 'remove' | 'promote' | 'demote' | 'transfer') => {
+    if (!apiToken || !activeRoom) return;
+    const isOwner = groupMembers.some(item => item.id === userId && item.role === 'owner');
+    if (action === 'transfer' && !isOwner) return;
+    setBusy(true);
+    try {
+      if (action === 'remove') await removeConversationMember(apiToken, activeRoom.id, member.id);
+      if (action === 'promote') await setConversationMemberRole(apiToken, activeRoom.id, member.id, 'admin');
+      if (action === 'demote') await setConversationMemberRole(apiToken, activeRoom.id, member.id, 'member');
+      if (action === 'transfer') await transferConversationOwnership(apiToken, activeRoom.id, member.id);
+      const [membersResult, settings] = await Promise.all([
+        getConversationMembers(apiToken, activeRoom.id),
+        getConversationSettings(apiToken, activeRoom.id)
+      ]);
+      setGroupMembers(membersResult.members);
+      setGroupSettings(settings);
+      showAlert(lang === 'fa' ? 'مدیریت اعضا به‌روزرسانی شد.' : 'Member settings updated.');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not update member.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openRoom = (room: Room) => {
@@ -653,8 +726,11 @@ function AppContent() {
           <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
-              <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
+              </View>
             </View>
             {modal === 'group' || modal === 'channel' ? <>
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.name}</Text>
@@ -663,6 +739,51 @@ function AppContent() {
               <TextInput value={roomDescription} onChangeText={setRoomDescription} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={180} />
               <Text style={[styles.demoNote, { color: c.muted }]}>{apiToken ? (lang === 'fa' ? 'این گفتگو روی سرور ساخته می‌شود.' : 'This conversation will be created on the server.') : (lang === 'fa' ? 'برای ساخت گفتگو باید ابتدا به API وصل شوی.' : 'Connect to the API before creating a conversation.')}</Text>
               <Pressable onPress={createRoom} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.create}</Text></Pressable>
+            </> : modal === 'groupSettings' ? <>
+              <ScrollView style={{ maxHeight: '76%' }} keyboardShouldPersistTaps="handled">
+                <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.name}</Text>
+                <TextInput value={roomName} onChangeText={setRoomName} maxLength={100} placeholder={t.name} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
+                <TextInput value={roomDescription} onChangeText={setRoomDescription} maxLength={280} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'تم گروه' : 'Group theme'}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {(['violet','blue','green','rose','amber','midnight','ocean'] as const).map((key, index) => {
+                    const colors = ['#5B52E8','#2878E8','#159A73','#E34E86','#D98B16','#202B45','#008DA8'];
+                    return <Pressable key={key} onPress={() => setGroupSettings(current => current ? { ...current, themeKey: key } : current)} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: colors[index], borderWidth: groupSettings?.themeKey === key ? 3 : 1, borderColor: groupSettings?.themeKey === key ? c.text : 'transparent' }}><Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>{key}</Text></Pressable>;
+                  })}
+                </View>
+                {groupSettings && <>
+                  <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                    <Text style={[styles.settingLabel, { color: c.text }]}>{lang === 'fa' ? 'اعضای عادی بتوانند پیام بدهند' : 'Members can send messages'}</Text>
+                    <Switch value={groupSettings.memberCanSend} onValueChange={v => setGroupSettings(current => current ? { ...current, memberCanSend: v } : current)} trackColor={{ true: c.primary, false: c.border }} />
+                  </View>
+                  <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+                    <Text style={[styles.settingLabel, { color: c.text }]}>{lang === 'fa' ? 'اعضای عادی بتوانند دعوت کنند' : 'Members can invite'}</Text>
+                    <Switch value={groupSettings.memberCanInvite} onValueChange={v => setGroupSettings(current => current ? { ...current, memberCanInvite: v } : current)} trackColor={{ true: c.primary, false: c.border }} />
+                  </View>
+                  <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'حالت آهسته (ثانیه؛ صفر یعنی خاموش)' : 'Slow mode (seconds; 0 disables)'}</Text>
+                  <TextInput value={String(groupSettings.slowModeSeconds)} onChangeText={v => setGroupSettings(current => current ? { ...current, slowModeSeconds: Math.max(0, Math.min(3600, Number.parseInt(v || '0', 10) || 0)) } : current)} keyboardType="number-pad" placeholder="0" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border }]} />
+                </>}
+                <Text style={[styles.fieldLabel, { color: c.muted, marginTop: 18 }]}>{lang === 'fa' ? 'اعضای گروه' : 'Group members'}</Text>
+                {groupMembers.map(member => {
+                  const currentRole = groupMembers.find(item => item.id === userId)?.role;
+                  const canManage = currentRole === 'owner' || currentRole === 'admin';
+                  return <View key={member.id} style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }}>
+                    <Avatar icon="person" color={c.primary} size={38} uri={member.avatarUrl} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: c.text, fontWeight: '800', fontSize: 12 }}>{member.displayName}</Text>
+                      <Text style={{ color: c.muted, fontSize: 10 }}>@{member.username} · {member.role}</Text>
+                    </View>
+                    {currentRole === 'owner' && member.id !== userId && member.role !== 'owner' && <>
+                      <Pressable onPress={() => { void actOnMember(member, member.role === 'admin' ? 'demote' : 'promote'); }} style={{ padding: 6 }}><Ionicons name={member.role === 'admin' ? 'shield-half-outline' : 'shield-checkmark-outline'} size={18} color={c.primary} /></Pressable>
+                      <Pressable onPress={() => { void actOnMember(member, 'transfer'); }} style={{ padding: 6 }}><Ionicons name="key-outline" size={18} color={c.primary} /></Pressable>
+                    </>}
+                    {canManage && member.id !== userId && member.role !== 'owner' && <Pressable onPress={() => { void actOnMember(member, 'remove'); }} style={{ padding: 6 }}><Ionicons name="person-remove-outline" size={18} color="#E34E68" /></Pressable>}
+                  </View>;
+                })}
+              </ScrollView>
+              <Pressable disabled={busy} onPress={() => { void saveGroupSettings(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
+              <Pressable onPress={() => setModal('chat')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'profile' ? <>
               <Pressable onPress={pickPhoto} style={{ alignItems: 'center', marginBottom: 18 }}>
                 <Avatar icon="camera" color={c.primary} size={82} uri={photo} />

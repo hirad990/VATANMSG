@@ -28,6 +28,8 @@ export type VatanMessage = {
   displayName: string;
   avatarUrl?: string | null;
   replyToId?: string | null;
+  status?: 'sending' | 'sent' | 'failed';
+  clientMessageId?: string;
 };
 
 type AuthResponse = { token: string; user: VatanUser };
@@ -168,10 +170,14 @@ export async function getMessages(token: string, conversationId: string) {
   return { messages: (result.messages ?? []).map(normalizeMessage) };
 }
 
-export async function sendMessage(token: string, conversationId: string, body: string) {
+export async function sendMessage(token: string, conversationId: string, body: string, options: { replyToId?: string | null; clientMessageId?: string } = {}) {
   const result = await request<any>('/messages', token, {
     method: 'POST',
-    body: JSON.stringify({ conversation_id: Number(conversationId), body })
+    body: JSON.stringify({
+      conversation_id: Number(conversationId), body,
+      ...(options.replyToId ? { reply_to_id: Number(options.replyToId) } : {}),
+      ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {})
+    })
   });
   return { ...result, message: normalizeMessage(result.message) };
 }

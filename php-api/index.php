@@ -772,7 +772,7 @@ function api_send_message(): never
     $id = (int)api_db()->lastInsertId();
 
     $stmt = api_db()->prepare(
-        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, m.client_message_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
          FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ? LIMIT 1'
     );
     $stmt->execute([$id]);
@@ -811,7 +811,7 @@ function api_get_messages(): never
 
     if ($beforeId && $beforeId > 0) {
         $stmt = api_db()->prepare(
-            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
+            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, m.client_message_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
              FROM messages m JOIN users u ON u.id = m.sender_id
              WHERE m.conversation_id = ? AND m.id < ? AND m.deleted_at IS NULL
              ORDER BY m.id DESC LIMIT ' . $limit
@@ -819,7 +819,7 @@ function api_get_messages(): never
         $stmt->execute([$conversationId, $beforeId]);
     } else {
         $stmt = api_db()->prepare(
-            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
+            'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, m.client_message_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at
              FROM messages m JOIN users u ON u.id = m.sender_id
              WHERE m.conversation_id = ? AND m.deleted_at IS NULL
              ORDER BY m.id DESC LIMIT ' . $limit
@@ -1210,7 +1210,7 @@ function api_search_messages(): never
     api_require_membership((int)$conversationId, (int)$user['id']);
     $like = '%' . addcslashes($query, '%_\\\\') . '%';
     $stmt = api_db()->prepare(
-        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
+        'SELECT m.id, m.conversation_id, m.sender_id, m.reply_to_id, m.client_message_id, u.username, u.display_name, u.avatar_url, m.body, m.created_at, m.edited_at
          FROM messages m JOIN users u ON u.id = m.sender_id
          WHERE m.conversation_id = ? AND m.deleted_at IS NULL AND m.body LIKE ?
          ORDER BY m.id DESC LIMIT 50'

@@ -823,6 +823,7 @@ function api_get_messages(): never
 
 function api_update_conversation_settings(): never
 {
+    $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
     api_method('GET', 'PATCH', 'POST');
     $user = api_user();
     $data = api_input();

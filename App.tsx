@@ -7,6 +7,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,6 +44,7 @@ const SESSION_KEY = 'vatanmsg.session.v1';
 const ROOM_PREFS_KEY = 'vatanmsg.roomprefs.v1';
 const DRAFTS_KEY = 'vatanmsg.drafts.v1';
 const SAVED_MESSAGES_KEY = 'vatanmsg.savedmessages.v1';
+const APP_PREFS_KEY = 'vatanmsg.appprefs.v1';
 
 async function readSavedSession(): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -173,6 +175,7 @@ function AppContent() {
   const [draftsByRoom, setDraftsByRoom] = useState<Record<string, string>>({});
   const [savedMessages, setSavedMessages] = useState<SavedMessage[]>([]);
   const [savedDataReady, setSavedDataReady] = useState(false);
+  const [appPrefsReady, setAppPrefsReady] = useState(false);
 
   const t = COPY[lang];
   const dark = theme === 'dark';
@@ -187,11 +190,34 @@ function AppContent() {
 
   useEffect(() => {
     let cancelled = false;
+    const restoreAppPreferences = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(APP_PREFS_KEY);
+        if (!cancelled && raw) {
+          const parsed: unknown = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            const prefs = parsed as { theme?: unknown; lang?: unknown };
+            if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
+            if (prefs.lang === 'fa' || prefs.lang === 'en') setLang(prefs.lang);
+          }
+        }
+      } catch { /* Keep defaults when preferences are unavailable. */ }
+      finally { if (!cancelled) setAppPrefsReady(true); }
+    };
+    void restoreAppPreferences();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!appPrefsReady) return;
+    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang })).catch(() => undefined);
+  }, [theme, lang, appPrefsReady]);
+
+  useEffect(() => {
+    let cancelled = false;
     const restoreRoomPreferences = async () => {
       try {
-        const raw = Platform.OS === 'web'
-          ? (typeof localStorage === 'undefined' ? null : localStorage.getItem(ROOM_PREFS_KEY))
-          : await SecureStore.getItemAsync(ROOM_PREFS_KEY);
+        const raw = await AsyncStorage.getItem(ROOM_PREFS_KEY);
         if (!cancelled && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (Array.isArray(parsed)) setPinnedRoomIds(parsed.filter((id): id is string => typeof id === 'string'));
@@ -222,10 +248,7 @@ function AppContent() {
     let cancelled = false;
     const restoreLocalMessengerData = async () => {
       try {
-        const read = async (key: string) => Platform.OS === 'web'
-          ? (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
-          : await SecureStore.getItemAsync(key);
-        const [draftRaw, savedRaw] = await Promise.all([read(DRAFTS_KEY), read(SAVED_MESSAGES_KEY)]);
+        const [draftRaw, savedRaw] = await Promise.all([AsyncStorage.getItem(DRAFTS_KEY), AsyncStorage.getItem(SAVED_MESSAGES_KEY)]);
         if (cancelled) return;
         if (draftRaw) { const value: unknown = JSON.parse(draftRaw); if (value && typeof value === 'object' && !Array.isArray(value)) setDraftsByRoom(value as Record<string, string>); }
         if (savedRaw) { const value: unknown = JSON.parse(savedRaw); if (Array.isArray(value)) setSavedMessages(value as SavedMessage[]); }
@@ -238,25 +261,12 @@ function AppContent() {
 
   useEffect(() => {
     if (!savedDataReady) return;
-    const write = async (key: string, value: string) => {
-      try {
-        if (Platform.OS === 'web') { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); }
-        else await SecureStore.setItemAsync(key, value);
-      } catch { /* Storage quotas should not interrupt sending messages. */ }
-    };
-    void write(DRAFTS_KEY, JSON.stringify(draftsByRoom));
+    void AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(draftsByRoom)).catch(() => undefined);
   }, [draftsByRoom, savedDataReady]);
 
   useEffect(() => {
     if (!savedDataReady) return;
-    const write = async () => {
-      try {
-        const value = JSON.stringify(savedMessages.slice(0, 200));
-        if (Platform.OS === 'web') { if (typeof localStorage !== 'undefined') localStorage.setItem(SAVED_MESSAGES_KEY, value); }
-        else await SecureStore.setItemAsync(SAVED_MESSAGES_KEY, value);
-      } catch { /* Saved items remain in memory if device storage is full. */ }
-    };
-    void write();
+    void AsyncStorage.setItem(SAVED_MESSAGES_KEY, JSON.stringify(savedMessages.slice(0, 200))).catch(() => undefined);
   }, [savedMessages, savedDataReady]);
 
   useEffect(() => {

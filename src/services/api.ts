@@ -162,3 +162,62 @@ export async function sendMessage(token: string, conversationId: string, body: s
   });
   return { ...result, message: normalizeMessage(result.message) };
 }
+
+export async function searchUsers(token: string, query: string): Promise<{ users: VatanUser[] }> {
+  const result = await request<{ users: any[] }>(`/users/search?q=${encodeURIComponent(query)}`, token);
+  return {
+    users: (result.users ?? []).map((user) => ({
+      id: String(user.id),
+      username: String(user.username ?? ''),
+      displayName: String(user.displayName ?? user.display_name ?? ''),
+      avatarUrl: user.avatarUrl ?? user.avatar_url ?? null,
+      birthYear: user.birthYear ?? null,
+      birthCalendar: user.birthCalendar ?? null
+    }))
+  };
+}
+
+export async function createDirectConversation(token: string, username: string) {
+  const result = await request<any>('/conversations/direct', token, {
+    method: 'POST',
+    body: JSON.stringify({ username })
+  });
+  return { ...result, conversation: normalizeConversation(result.conversation) };
+}
+
+export async function joinConversation(token: string, conversationId: string): Promise<void> {
+  await request('/conversations/join', token, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_id: Number(conversationId) })
+  });
+}
+
+export async function leaveConversation(token: string, conversationId: string): Promise<void> {
+  await request('/conversations/leave', token, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_id: Number(conversationId) })
+  });
+}
+
+export async function addConversationMember(token: string, conversationId: string, username: string): Promise<void> {
+  await request('/conversations/add-member', token, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_id: Number(conversationId), username })
+  });
+}
+
+export async function editMessage(token: string, messageId: string, body: string) {
+  const result = await request<any>('/messages/edit', token, {
+    method: 'PATCH',
+    body: JSON.stringify({ message_id: Number(messageId), body })
+  });
+  return { ...result, message: normalizeMessage(result.message) };
+}
+
+export async function deleteMessage(token: string, messageId: string): Promise<void> {
+  await request('/messages/delete', token, {
+    method: 'POST',
+    body: JSON.stringify({ message_id: Number(messageId) })
+  });
+}
+

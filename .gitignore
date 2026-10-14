@@ -16,3 +16,6 @@ yarn-debug.log*
 *.mobileprovision
 android/
 ios/
+
+# Never commit live cPanel database credentials
+php-api/config.php

@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { createChannel, createGroup, getMessages, listConversations, loginDemo, sendMessage, updateMyProfile, type VatanMessage } from './src/services/api';
 
 type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'settings';
-type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' };
+type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct' };
 
 const COPY = {
   fa: {
@@ -23,10 +24,10 @@ const COPY = {
     appearance: 'ظاهر برنامه', dark: 'حالت تاریک', language: 'زبان برنامه', fa: 'فارسی', en: 'English',
     account: 'حساب کاربری', privacy: 'حریم خصوصی', notifications: 'اعلان‌ها', about: 'درباره وطن',
     save: 'ذخیره تغییرات', saved: 'تغییرات ذخیره شد', choosePhoto: 'انتخاب عکس پروفایل',
-    noContacts: 'هنوز مخاطبی وجود ندارد', demo: 'نسخه نمایشی', phone: 'ورود با شماره موبایل',
-    phoneHint: 'شماره موبایل', continue: 'ادامه', backend: 'ورود پیامکی در مرحله اتصال بک‌اند فعال می‌شود.',
+    noContacts: 'هنوز مخاطبی وجود ندارد', demo: 'نسخه نمایشی', phone: 'ورود آزمایشی به سرور',
+    phoneHint: 'نام کاربری آزمایشی', continue: 'اتصال به سرور', backend: 'این ورود آزمایشی است و هنوز کد پیامکی ارسال نمی‌شود.',
     members: 'عضو', subscribers: 'دنبال‌کننده', newMessage: 'پیام جدید', profileHint: 'خودت را به دیگران معرفی کن',
-    home: 'خانه', all: 'همه', privateNote: 'اطلاعات پروفایل فعلاً روی همین صفحه نگه داشته می‌شود.'
+    home: 'خانه', all: 'همه', privateNote: 'برای ذخیره پروفایل باید به API وارد شده باشی.'
   },
   en: {
     brand: 'Vatan', tagline: 'Closer, wherever you are', search: 'Search messages and people',
@@ -41,19 +42,12 @@ const COPY = {
     appearance: 'Appearance', dark: 'Dark mode', language: 'App language', fa: 'فارسی', en: 'English',
     account: 'Account', privacy: 'Privacy', notifications: 'Notifications', about: 'About Vatan',
     save: 'Save changes', saved: 'Changes saved', choosePhoto: 'Choose profile photo',
-    noContacts: 'No contacts yet', demo: 'DEMO', phone: 'Continue with phone',
-    phoneHint: 'Phone number', continue: 'Continue', backend: 'SMS sign-in will be enabled when the backend is connected.',
+    noContacts: 'No contacts yet', demo: 'DEMO', phone: 'Connect to API (demo)',
+    phoneHint: 'Demo username', continue: 'Connect', backend: 'Demo sign-in only; SMS verification is not enabled.',
     members: 'members', subscribers: 'subscribers', newMessage: 'New message', profileHint: 'Let people know you',
-    home: 'Home', all: 'All', privateNote: 'Profile changes are currently kept in this screen only.'
+    home: 'Home', all: 'All', privateNote: 'Sign in to the API to save profile changes.'
   }
 };
-
-const INITIAL_CHATS = [
-  { id: '1', title: 'تیم وطن', subtitle: 'جلسه فردا ساعت ۱۰ یادتون نره', icon: 'people', color: '#6C63FF', time: '۱۰:۲۴', unread: 2 },
-  { id: '2', title: 'مریم احمدی', subtitle: 'عالیه، پس هماهنگ شد ✨', icon: 'person', color: '#F59E0B', time: 'دیروز', unread: 0 },
-  { id: '3', title: 'گروه برنامه‌نویسی', subtitle: 'علی: نسخه جدید آماده شد', icon: 'code-slash', color: '#10B981', time: 'دیروز', unread: 5 },
-  { id: '4', title: 'اخبار فناوری', subtitle: 'خبرهای جدید دنیای تکنولوژی', icon: 'planet', color: '#EC4899', time: 'سه‌شنبه', unread: 0 }
-];
 
 function AppContent() {
   const [lang, setLang] = useState<Language>('fa');
@@ -64,12 +58,19 @@ function AppContent() {
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [search, setSearch] = useState('');
-  const [phone, setPhone] = useState('');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginDisplayName, setLoginDisplayName] = useState('');
+  const [apiToken, setApiToken] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const [messages, setMessages] = useState<VatanMessage[]>([]);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
   const t = COPY[lang];
@@ -82,7 +83,7 @@ function AppContent() {
     border: '#E7EAF2', primary: '#5B52E8', soft: '#EFEEFF', input: '#F6F7FB'
   };
   const isRTL = lang === 'fa';
-  const filteredChats = useMemo(() => INITIAL_CHATS.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [search]);
+  const filteredChats = useMemo(() => rooms.filter(x => (x.title + x.subtitle).toLowerCase().includes(search.toLowerCase())), [rooms, search]);
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);
   const pickPhoto = async () => {
@@ -91,13 +92,152 @@ function AppContent() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (!result.canceled && result.assets[0]) setPhoto(result.assets[0].uri);
   };
-  const createRoom = () => {
-    if (!roomName.trim()) { showAlert(lang === 'fa' ? 'اول یک نام وارد کن.' : 'Please enter a name first.'); return; }
-    setRooms(prev => [{ id: String(Date.now()), title: roomName.trim(), subtitle: roomDescription.trim() || (lang === 'fa' ? 'تازه ساخته شده' : 'Just created'), icon: modal === 'group' ? 'people' : 'megaphone', kind: modal === 'group' ? 'group' : 'channel' }, ...prev]);
-    setRoomName(''); setRoomDescription(''); setModal(null);
-    setTab(modal === 'group' ? 'groups' : 'channels');
+  const loadConversations = async (token: string) => {
+    const result = await listConversations(token);
+    setRooms(result.conversations.map(item => ({
+      id: item.id,
+      title: item.title,
+      subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
+      icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
+      kind: item.kind
+    })));
   };
-  const saveProfile = () => { setModal(null); setSaved(true); setTimeout(() => setSaved(false), 2400); };
+
+  const loginToApi = async () => {
+    const safeUsername = loginUsername.trim();
+    if (!safeUsername) { showAlert(lang === 'fa' ? 'یک نام کاربری وارد کن.' : 'Enter a demo username.'); return; }
+    setBusy(true);
+    try {
+      const result = await loginDemo({
+        username: safeUsername,
+        displayName: loginDisplayName.trim() || safeUsername
+      });
+      setApiToken(result.token);
+      setUserId(result.user.id);
+      setUsername(result.user.username);
+      setDisplayName(result.user.displayName);
+      setPhoto(result.user.avatarUrl);
+      setBirthYear(result.user.birthYear == null ? '' : String(result.user.birthYear));
+      setCalendar(result.user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
+      await loadConversations(result.token);
+      setModal(null);
+      showAlert(lang === 'fa' ? 'به API وطن وصل شدی. این ورود آزمایشی است.' : 'Connected to Vatan API using demo sign-in.');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'API sign-in failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createRoom = async () => {
+    if (!roomName.trim()) { showAlert(lang === 'fa' ? 'اول یک نام وارد کن.' : 'Please enter a name first.'); return; }
+    if (!apiToken) {
+      showAlert(lang === 'fa' ? 'اول از بخش ورود آزمایشی به API وصل شو.' : 'Connect to the API first.');
+      setModal('login');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = modal === 'channel'
+        ? await createChannel(apiToken, roomName.trim(), roomDescription.trim())
+        : await createGroup(apiToken, roomName.trim(), roomDescription.trim());
+      const conversation = result.conversation;
+      const room: Room = {
+        id: conversation.id,
+        title: conversation.title,
+        subtitle: conversation.description || (lang === 'fa' ? 'تازه ساخته شده' : 'Just created'),
+        icon: conversation.kind === 'channel' ? 'megaphone' : 'people',
+        kind: conversation.kind
+      };
+      setRooms(prev => [room, ...prev.filter(item => item.id !== room.id)]);
+      setRoomName('');
+      setRoomDescription('');
+      setModal(null);
+      setTab(conversation.kind === 'channel' ? 'channels' : 'groups');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not create conversation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!apiToken) {
+      showAlert(lang === 'fa' ? 'برای ذخیره پروفایل اول به API وصل شو.' : 'Connect to the API before saving your profile.');
+      setModal('login');
+      return;
+    }
+    const parsedYear = birthYear.trim() ? Number.parseInt(birthYear, 10) : null;
+    if (parsedYear !== null && !Number.isFinite(parsedYear)) {
+      showAlert(lang === 'fa' ? 'سال تولد معتبر نیست.' : 'Invalid birth year.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const user = await updateMyProfile(apiToken, {
+        displayName: displayName.trim(),
+        username: username.trim(),
+        birthYear: parsedYear,
+        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian'
+      });
+      setDisplayName(user.displayName);
+      setUsername(user.username);
+      setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
+      setCalendar(user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
+      setModal(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2400);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not save profile.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openRoom = (room: Room) => {
+    if (!apiToken) {
+      showAlert(lang === 'fa' ? 'اول به API وصل شو.' : 'Connect to the API first.');
+      setModal('login');
+      return;
+    }
+    setActiveRoom(room);
+    setMessages([]);
+    setMessageDraft('');
+    setModal('chat');
+  };
+
+  const submitMessage = async () => {
+    if (!apiToken || !activeRoom || !messageDraft.trim()) return;
+    setBusy(true);
+    try {
+      const result = await sendMessage(apiToken, activeRoom.id, messageDraft.trim());
+      setMessages(previous => [...previous, result.message]);
+      setMessageDraft('');
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not send message.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (modal !== 'chat' || !apiToken || !activeRoom) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const result = await getMessages(apiToken, activeRoom.id);
+        if (!cancelled) setMessages(result.messages);
+      } catch {
+        // Keep the current messages visible if a polling request temporarily fails.
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => { void refresh(); }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [modal, apiToken, activeRoom?.id]);
   const labelForTab = (x: Tab) => t[x];
 
   const Header = ({ title, subtitle }: { title: string; subtitle?: string }) => (
@@ -125,22 +265,10 @@ function AppContent() {
     </View>
   );
 
-  const renderChatRow = (item: typeof INITIAL_CHATS[number]) => (
-    <Pressable key={item.id} onPress={() => showAlert(lang === 'fa' ? 'گفت‌وگوی زنده بعد از اتصال سرویس پیام‌رسان فعال می‌شود.' : 'Live chat will be available after connecting the messaging service.')} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
-      <Avatar icon={item.icon} color={item.color} />
-      <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-        <Text numberOfLines={1} style={[styles.chatTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{item.title}</Text>
-        <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{item.subtitle}</Text>
-      </View>
-      <View style={{ alignItems: 'center', gap: 7 }}>
-        <Text style={{ color: c.muted, fontSize: 10 }}>{item.time}</Text>
-        {item.unread > 0 && <View style={styles.unread}><Text style={styles.unreadText}>{item.unread}</Text></View>}
-      </View>
-    </Pressable>
-  );
+  
 
   const renderRoom = (room: Room) => (
-    <Pressable key={room.id} onPress={() => showAlert(lang === 'fa' ? 'پیام‌رسانی زنده پس از اتصال بک‌اند فعال می‌شود.' : 'Live messaging will be enabled once the backend is connected.')} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
+    <Pressable key={room.id} onPress={() => openRoom(room)} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
       <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : '#EC4899'} />
       <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
         <Text style={[styles.chatTitle, { color: c.text }]}>{room.title}</Text>
@@ -173,9 +301,8 @@ function AppContent() {
       </View>
       <SectionTitle title={t.recent} action={t.seeAll} />
       <View style={[styles.listCard, { backgroundColor: c.surface }]}>
-        {filteredChats.map(renderChatRow)}
-        {rooms.slice(0, 2).map(renderRoom)}
-        {filteredChats.length === 0 && rooms.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{t.emptyTitle}</Text>}
+        {filteredChats.map(renderRoom)}
+        {filteredChats.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{t.emptyTitle}</Text>}
       </View>
       <View style={[styles.infoStrip, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <Ionicons name="shield-checkmark-outline" size={22} color={c.primary} />
@@ -291,7 +418,7 @@ function AppContent() {
           <View style={[styles.modalSheet, { backgroundColor: c.surface }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
             </View>
             {modal === 'group' || modal === 'channel' ? <>
@@ -299,7 +426,7 @@ function AppContent() {
               <TextInput value={roomName} onChangeText={setRoomName} placeholder={modal === 'group' ? (lang === 'fa' ? 'مثلاً دوستان' : 'e.g. Friends') : (lang === 'fa' ? 'مثلاً اخبار وطن' : 'e.g. Vatan News')} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
               <TextInput value={roomDescription} onChangeText={setRoomDescription} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={180} />
-              <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? 'این مورد فعلاً به‌صورت محلی ساخته می‌شود؛ برای دعوت اعضا به بک‌اند نیاز داریم.' : 'Created locally for now; inviting members requires a backend.'}</Text>
+              <Text style={[styles.demoNote, { color: c.muted }]}>{apiToken ? (lang === 'fa' ? 'این گفتگو روی سرور ساخته می‌شود.' : 'This conversation will be created on the server.') : (lang === 'fa' ? 'برای ساخت گفتگو باید ابتدا به API وصل شوی.' : 'Connect to the API before creating a conversation.')}</Text>
               <Pressable onPress={createRoom} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.create}</Text></Pressable>
             </> : modal === 'profile' ? <>
               <Pressable onPress={pickPhoto} style={{ alignItems: 'center', marginBottom: 18 }}>
@@ -316,13 +443,30 @@ function AppContent() {
               <View style={[styles.segment, { backgroundColor: c.input, alignSelf: 'stretch', flexDirection: isRTL ? 'row-reverse' : 'row', marginBottom: 14 }]}>
                 {(['solar', 'gregorian'] as const).map(v => <Pressable key={v} onPress={() => setCalendar(v)} style={[styles.calendarOption, calendar === v && { backgroundColor: c.primary }]}><Text style={{ color: calendar === v ? '#FFF' : c.muted, fontWeight: '700' }}>{v === 'solar' ? t.solar : t.gregorian}</Text></Pressable>)}
               </View>
-              <Pressable onPress={saveProfile} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.save}</Text></Pressable>
+              <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
+            </> : modal === 'chat' ? <>
+              <ScrollView style={{ maxHeight: 330 }} contentContainerStyle={{ gap: 8, paddingVertical: 8 }}>
+                {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
+                  const mine = message.senderId === userId;
+                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '88%', backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
+                    {!mine && <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3 }}>{message.displayName}</Text>}
+                    <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                    <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}</Text>
+                  </View>;
+                })}
+              </ScrollView>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…'} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
+                <Pressable disabled={busy || !messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: busy || !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name="send" size={18} color="#FFF" /></Pressable>
+              </View>
             </> : <>
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.phoneHint}</Text>
-              <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+98 912 000 0000" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
-              <Text style={[styles.demoNote, { color: c.muted }]}>{t.backend}</Text>
-              <Pressable onPress={() => showAlert(t.backend)} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.continue}</Text></Pressable>
+              <TextInput value={loginUsername} onChangeText={v => setLoginUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} autoCapitalize="none" placeholder="vatan_test_01" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.displayName}</Text>
+              <TextInput value={loginDisplayName} onChangeText={setLoginDisplayName} placeholder={lang === 'fa' ? 'مثلاً کاربر وطن' : 'e.g. Vatan User'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} />
+              <Text style={[styles.demoNote, { color: c.muted }]}>{t.backend}{' '}{lang === 'fa' ? 'نام کاربری باید جدید باشد.' : 'Choose a new username.'}</Text>
+              <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.continue}</Text></Pressable>
             </>}
             <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
           </View>

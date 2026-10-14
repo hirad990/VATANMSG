@@ -1,33 +1,32 @@
-import { io, type Socket } from 'socket.io-client';
-import type { VatanMessage } from './api';
+import { getMessages, type VatanMessage } from './api';
 
-type ServerEvents = {
-  'message:new': (message: VatanMessage) => void;
-};
+/**
+ * cPanel shared hosting currently uses REST polling rather than WebSockets.
+ * Returns a cleanup function suitable for a React useEffect.
+ */
+export function subscribeToVatanMessages(
+  token: string,
+  conversationId: string,
+  onMessages: (messages: VatanMessage[]) => void,
+  onError?: (error: Error) => void,
+  intervalMs = 5000
+): () => void {
+  let stopped = false;
 
-type ClientEvents = {
-  'conversation:join': (
-    input: { conversationId: string },
-    callback?: (result: { ok: boolean; error?: string }) => void
-  ) => void;
-  'message:send': (
-    input: { conversationId: string; body: string },
-    callback?: (result: { ok: boolean; error?: string; message?: VatanMessage }) => void
-  ) => void;
-};
+  const refresh = async () => {
+    try {
+      const result = await getMessages(token, conversationId);
+      if (!stopped) onMessages(result.messages);
+    } catch (error) {
+      if (!stopped && onError && error instanceof Error) onError(error);
+    }
+  };
 
-const API_BASE_URL = (process.env.EXPO_PUBLIC_VATAN_API_URL || 'http://localhost:4000').replace(/\/$/, '');
+  void refresh();
+  const timer = setInterval(() => { void refresh(); }, Math.max(3000, intervalMs));
 
-export type VatanSocket = Socket<ServerEvents, ClientEvents>;
-
-/** Create an authenticated socket. Keep the token in platform secure storage when wiring login. */
-export function connectVatanSocket(token: string): VatanSocket {
-  return io(API_BASE_URL, {
-    transports: ['websocket'],
-    auth: { token },
-    reconnection: true,
-    reconnectionAttempts: 8,
-    reconnectionDelay: 700,
-    timeout: 10_000
-  });
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }

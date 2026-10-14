@@ -776,6 +776,7 @@ function api_send_message(): never
     );
     $stmt->execute([$id]);
     $row = $stmt->fetch();
+    api_dispatch_push_notification((int)$conversationId, (int)$user['id'], (string)$user['display_name'], $body);
     api_response(['message' => [
         'id' => (string)$row['id'],
         'conversationId' => (string)$row['conversation_id'],
@@ -1003,6 +1004,67 @@ function api_transfer_conversation_ownership(): never
 
 
 
+
+function api_register_push_device(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $data = api_input();
+    $token = trim((string)($data['push_token'] ?? ''));
+    $platform = (string)($data['platform'] ?? '');
+    if (!preg_match('/^(Exponent|Expo)PushToken\\[[A-Za-z0-9_-]+\\]$/', $token) || strlen($token) > 512) {
+        api_response(['error' => 'Invalid Expo push token'], 422);
+    }
+    if (!in_array($platform, ['ios','android','web'], true)) api_response(['error' => 'Invalid platform'], 422);
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id FROM push_devices WHERE push_token = ? LIMIT 1');
+    $stmt->execute([$token]);
+    $existing = $stmt->fetchColumn();
+    if ($existing) {
+        $pdo->prepare('UPDATE push_devices SET user_id = ?, platform = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$user['id'], $platform, $existing]);
+    } else {
+        $pdo->prepare('INSERT INTO push_devices (user_id, platform, push_token) VALUES (?, ?, ?)')->execute([$user['id'], $platform, $token]);
+    }
+    api_response(['success' => true]);
+}
+
+function api_dispatch_push_notification(int $conversationId, int $senderId, string $senderName, string $body): void
+{
+    if (!function_exists('curl_init')) return;
+    $stmt = api_db()->prepare(
+        'SELECT DISTINCT p.push_token
+         FROM push_devices p
+         JOIN conversation_members cm ON cm.user_id = p.user_id
+         WHERE cm.conversation_id = ? AND p.user_id <> ?'
+    );
+    $stmt->execute([$conversationId, $senderId]);
+    $tokens = array_values(array_unique(array_column($stmt->fetchAll(), 'push_token')));
+    if (!$tokens) return;
+    $preview = mb_substr(trim($body), 0, 140);
+    $payload = [];
+    foreach ($tokens as $token) {
+        $payload[] = [
+            'to' => $token,
+            'title' => mb_substr($senderName, 0, 80),
+            'body' => $preview === '' ? 'پیام جدید' : $preview,
+            'sound' => 'default',
+            'data' => ['conversationId' => (string)$conversationId]
+        ];
+    }
+    $ch = curl_init('https://exp.host/--/api/v2/push/send');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json', 'Accept-Encoding: gzip, deflate'],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 1,
+        CURLOPT_TIMEOUT => 2
+    ]);
+    $response = curl_exec($ch);
+    if ($response === false) error_log('VatanMSG push dispatch failed: ' . curl_error($ch));
+    curl_close($ch);
+}
+
 function api_message_attachments(int $messageId): array
 {
     $stmt = api_db()->prepare('SELECT id, original_name, mime_type, size_bytes, created_at FROM message_attachments WHERE message_id = ? ORDER BY id ASC');
@@ -1079,6 +1141,7 @@ function api_upload_media(): never
         throw $e;
     }
     $message = api_message_by_id($messageId);
+    api_dispatch_push_notification((int)$conversationId, (int)$user['id'], (string)$user['display_name'], $messageBody);
     api_response(['success' => true, 'message' => $message, 'attachment' => api_message_attachments($messageId)[0]], 201);
 }
 
@@ -1223,6 +1286,9 @@ try {
             break;
         case 'auth/logout-all':
             api_logout_all_sessions();
+            break;
+        case 'push/register':
+            api_register_push_device();
             break;
         case 'conversations':
             if ($method === 'POST') {

@@ -2,10 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { Linking } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 
 
@@ -482,6 +486,55 @@ function AppContent() {
     setModal('chat');
   };
 
+  const uploadFileToRoom = async (file: { uri: string; name: string; type: string }) => {
+    if (!apiToken || !activeRoom) return;
+    setBusy(true);
+    try {
+      const result = await uploadConversationAttachment(apiToken, activeRoom.id, file);
+      setMessages(previous => [...previous, { ...result.message, status: 'sent' }]);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Upload failed.');
+    } finally { setBusy(false); }
+  };
+
+  const pickMediaForChat = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], allowsMultipleSelection: false, quality: 0.85 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await uploadFileToRoom({
+      uri: asset.uri,
+      name: asset.fileName || (asset.type === 'video' ? 'video.mp4' : 'image.jpg'),
+      type: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg')
+    });
+  };
+
+  const pickDocumentForChat = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true, multiple: false });
+    if (result.canceled || !result.assets[0]) return;
+    const file = result.assets[0];
+    await uploadFileToRoom({ uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream' });
+  };
+
+  const openAttachment = async (url: string, name: string) => {
+    if (!apiToken) return;
+    try {
+      if (Platform.OS === 'web') {
+        const response = await fetch(url, { headers: { Authorization: `Bearer ${apiToken}` } });
+        if (!response.ok) throw new Error('Could not download attachment.');
+        const blobUrl = URL.createObjectURL(await response.blob());
+        window.open(blobUrl, '_blank');
+      } else {
+        const safeName = name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100) || 'attachment';
+        const destination = (FileSystem.cacheDirectory || '') + safeName;
+        const result = await FileSystem.downloadAsync(url, destination, { headers: { Authorization: `Bearer ${apiToken}` } });
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri);
+        else await Linking.openURL(result.uri);
+      }
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : 'Could not open attachment.');
+    }
+  };
+
   const submitMessage = async () => {
     if (!apiToken || !activeRoom || !messageDraft.trim()) return;
     const body = messageDraft.trim();
@@ -913,6 +966,11 @@ function AppContent() {
                       <View style={{ backgroundColor: mine ? c.soft : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                        {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
+                          {file.mimeType.startsWith('image/') ? <Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 44, height: 44, borderRadius: 8 }} /> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />}
+                          <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
+                          <Ionicons name="download-outline" size={17} color={c.primary} />
+                        </Pressable>)}
                         <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}{message.editedAt ? (lang === 'fa' ? ' · ویرایش‌شده' : ' · edited') : ''}{message.status === 'sending' ? (lang === 'fa' ? ' · در حال ارسال…' : ' · sending…') : message.status === 'failed' ? (lang === 'fa' ? ' · ارسال ناموفق' : ' · failed') : mine && message.status === 'sent' ? (lang === 'fa' ? ' · ارسال شد' : ' · sent') : ''}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
@@ -937,7 +995,9 @@ function AppContent() {
                 <Text style={{ color: c.primary, fontSize: 11, flex: 1 }}>{editingMessageId ? (lang === 'fa' ? 'ویرایش پیام' : 'Editing message') : (lang === 'fa' ? 'پاسخ به: ' + (replyingTo?.displayName ?? '') : 'Reply to: ' + (replyingTo?.displayName ?? ''))}</Text>
                 <Pressable onPress={() => { setReplyingTo(null); setEditingMessageId(null); setMessageDraft(''); }}><Ionicons name="close-circle" size={18} color={c.muted} /></Pressable>
               </View>}
-              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                <Pressable disabled={busy} onPress={() => { void pickMediaForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="image-outline" size={20} color={c.primary} /></Pressable>
+                <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
                 <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>

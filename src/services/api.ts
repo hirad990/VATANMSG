@@ -307,3 +307,11 @@ export async function markMessagesRead(token: string, conversationId: string, la
 export async function logoutAllSessions(token: string): Promise<void> {
   await request('/auth/logout-all', token, { method: 'POST', body: '{}' });
 }
+
+export async function searchConversationMessages(token: string, conversationId: string, query: string): Promise<{ messages: VatanMessage[] }> {
+  const result = await request<{ messages: any[] }>(
+    `/messages/search?conversation_id=${encodeURIComponent(conversationId)}&q=${encodeURIComponent(query)}`,
+    token
+  );
+  return { messages: (result.messages ?? []).map(normalizeMessage) };
+}

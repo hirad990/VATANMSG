@@ -41,6 +41,8 @@ async function registerPushForSession(token: string): Promise<void> {
 
 const SESSION_KEY = 'vatanmsg.session.v1';
 const ROOM_PREFS_KEY = 'vatanmsg.roomprefs.v1';
+const DRAFTS_KEY = 'vatanmsg.drafts.v1';
+const SAVED_MESSAGES_KEY = 'vatanmsg.savedmessages.v1';
 
 async function readSavedSession(): Promise<string | null> {
   if (Platform.OS === 'web') {
@@ -82,13 +84,14 @@ function Text(props: React.ComponentProps<typeof NativeText>) {
 
 type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
-type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'settings';
+type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
+type SavedMessage = VatanMessage & { savedAt: string };
 type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct' };
 
 const COPY = {
   fa: {
     brand: 'وطن', tagline: 'ارتباط، نزدیک‌تر از همیشه', search: 'جست‌وجوی پیام‌ها و افراد',
-    chats: 'گفت‌وگوها', contacts: 'مخاطبین', groups: 'گروه‌ها', channels: 'کانال‌ها', settings: 'تنظیمات',
+    chats: 'گفت‌وگوها', contacts: 'مخاطبین', groups: 'گروه‌ها', channels: 'کانال‌ها', saved: 'پیام‌های ذخیره‌شده', settings: 'تنظیمات',
     welcome: 'سلام، خوش اومدی 👋', overview: 'همه ارتباطاتت، یک‌جا',
     recent: 'گفت‌وگوهای اخیر', seeAll: 'مشاهده همه', online: 'آنلاین', today: 'امروز',
     emptyTitle: 'اینجا هنوز خبری نیست', emptyBody: 'با ساختن یک گروه یا کانال، شروع کن.',
@@ -106,7 +109,7 @@ const COPY = {
   },
   en: {
     brand: 'Vatan', tagline: 'Closer, wherever you are', search: 'Search messages and people',
-    chats: 'Chats', contacts: 'Contacts', groups: 'Groups', channels: 'Channels', settings: 'Settings',
+    chats: 'Chats', contacts: 'Contacts', groups: 'Groups', channels: 'Channels', saved: 'Saved messages', settings: 'Settings',
     welcome: 'Hello, welcome back 👋', overview: 'All your conversations, in one place',
     recent: 'Recent chats', seeAll: 'See all', online: 'Online', today: 'Today',
     emptyTitle: 'It’s quiet here for now', emptyBody: 'Start by creating a group or channel.',
@@ -167,6 +170,9 @@ function AppContent() {
   const [chatFilter, setChatFilter] = useState<'all' | 'direct' | 'group' | 'channel' | 'pinned'>('all');
   const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
   const [roomPrefsReady, setRoomPrefsReady] = useState(false);
+  const [draftsByRoom, setDraftsByRoom] = useState<Record<string, string>>({});
+  const [savedMessages, setSavedMessages] = useState<SavedMessage[]>([]);
+  const [savedDataReady, setSavedDataReady] = useState(false);
 
   const t = COPY[lang];
   const dark = theme === 'dark';
@@ -213,6 +219,64 @@ function AppContent() {
   }, [pinnedRoomIds, roomPrefsReady]);
 
   useEffect(() => {
+    let cancelled = false;
+    const restoreLocalMessengerData = async () => {
+      try {
+        const read = async (key: string) => Platform.OS === 'web'
+          ? (typeof localStorage === 'undefined' ? null : localStorage.getItem(key))
+          : await SecureStore.getItemAsync(key);
+        const [draftRaw, savedRaw] = await Promise.all([read(DRAFTS_KEY), read(SAVED_MESSAGES_KEY)]);
+        if (cancelled) return;
+        if (draftRaw) { const value: unknown = JSON.parse(draftRaw); if (value && typeof value === 'object' && !Array.isArray(value)) setDraftsByRoom(value as Record<string, string>); }
+        if (savedRaw) { const value: unknown = JSON.parse(savedRaw); if (Array.isArray(value)) setSavedMessages(value as SavedMessage[]); }
+      } catch { /* Local enhancements must never block the messenger. */ }
+      finally { if (!cancelled) setSavedDataReady(true); }
+    };
+    void restoreLocalMessengerData();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!savedDataReady) return;
+    const write = async (key: string, value: string) => {
+      try {
+        if (Platform.OS === 'web') { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); }
+        else await SecureStore.setItemAsync(key, value);
+      } catch { /* Storage quotas should not interrupt sending messages. */ }
+    };
+    void write(DRAFTS_KEY, JSON.stringify(draftsByRoom));
+  }, [draftsByRoom, savedDataReady]);
+
+  useEffect(() => {
+    if (!savedDataReady) return;
+    const write = async () => {
+      try {
+        const value = JSON.stringify(savedMessages.slice(0, 200));
+        if (Platform.OS === 'web') { if (typeof localStorage !== 'undefined') localStorage.setItem(SAVED_MESSAGES_KEY, value); }
+        else await SecureStore.setItemAsync(SAVED_MESSAGES_KEY, value);
+      } catch { /* Saved items remain in memory if device storage is full. */ }
+    };
+    void write();
+  }, [savedMessages, savedDataReady]);
+
+  useEffect(() => {
+    if (!activeRoom) return;
+    setMessageDraft(draftsByRoom[activeRoom.id] ?? '');
+    setReplyingTo(null);
+    setEditingMessageId(null);
+  }, [activeRoom?.id]);
+
+  useEffect(() => {
+    if (!activeRoom || !savedDataReady || editingMessageId) return;
+    setDraftsByRoom(previous => {
+      const next = { ...previous };
+      if (messageDraft.trim()) next[activeRoom.id] = messageDraft;
+      else delete next[activeRoom.id];
+      return next;
+    });
+  }, [messageDraft, activeRoom?.id, savedDataReady, editingMessageId]);
+
+  useEffect(() => {
     Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
   }, [heroMotion]);
 
@@ -252,6 +316,20 @@ function AppContent() {
     setPinnedRoomIds(previous => previous.includes(room.id)
       ? previous.filter(id => id !== room.id)
       : [room.id, ...previous]);
+  };
+
+  const toggleSavedMessage = (message: VatanMessage) => {
+    setSavedMessages(previous => previous.some(item => item.id === message.id && item.conversationId === message.conversationId)
+      ? previous.filter(item => !(item.id === message.id && item.conversationId === message.conversationId))
+      : [{ ...message, savedAt: new Date().toISOString() }, ...previous].slice(0, 200));
+  };
+
+  const openSavedMessage = (message: SavedMessage) => {
+    const room = rooms.find(item => item.id === message.conversationId);
+    if (!room) { showAlert(lang === 'fa' ? 'گفت‌وگوی اصلی در دسترس نیست.' : 'The original conversation is unavailable.'); return; }
+    setActiveRoom(room);
+    setMessages([]);
+    setModal('chat');
   };
 
   const showAlert = (message: string) => Alert.alert(t.brand, message);
@@ -890,6 +968,28 @@ function AppContent() {
     </>
   );
 
+  const renderSavedMessages = () => (
+    <>
+      <View style={[styles.collectionHero, { backgroundColor: c.soft, alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+        <Avatar icon="bookmark" color={c.primary} size={62} />
+        <Text style={[styles.pageTitle, { color: c.text }]}>{lang === 'fa' ? 'پیام‌های ذخیره‌شده' : 'Saved messages'}</Text>
+        <Text style={[styles.pageSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'پیام‌های مهم را برای دسترسی سریع اینجا نگه دار. این فهرست فعلاً روی همین دستگاه ذخیره می‌شود.' : 'Keep important messages here for quick access. This list is currently stored on this device.'}</Text>
+        <View style={[styles.filterCount, { backgroundColor: c.surface, alignSelf: isRTL ? 'flex-end' : 'flex-start', marginTop: 12, paddingHorizontal: 10 }]}><Text style={{ color: c.primary, fontSize: 11, fontWeight: '900' }}>{savedMessages.length} {lang === 'fa' ? 'پیام' : 'messages'}</Text></View>
+      </View>
+      <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
+        {savedMessages.map(message => <View key={`${message.conversationId}:${message.id}`} style={{ paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 7 }}>
+          <Pressable onPress={() => openSavedMessage(message)} style={{ gap: 5 }}>
+            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 7 }}><Ionicons name="bookmark" size={14} color={c.primary} /><Text style={{ color: c.primary, fontSize: 11, fontWeight: '900', flex: 1 }}>{rooms.find(room => room.id === message.conversationId)?.title ?? (lang === 'fa' ? 'گفت‌وگوی حذف‌شده' : 'Unavailable conversation')}</Text><Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={15} color={c.muted} /></View>
+            <Text numberOfLines={4} style={{ color: c.text, fontSize: 13, lineHeight: 20, textAlign: isRTL ? 'right' : 'left' }}>{message.body || (message.attachments?.length ? message.attachments.map(file => file.name).join(', ') : (lang === 'fa' ? 'پیام رسانه‌ای' : 'Media message'))}</Text>
+            <Text style={{ color: c.muted, fontSize: 9, textAlign: isRTL ? 'right' : 'left' }}>{message.displayName} · {new Date(message.createdAt).toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-US')}</Text>
+          </Pressable>
+          <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', justifyContent: 'flex-end' }}><Pressable onPress={() => toggleSavedMessage(message)} style={[styles.smallAction, { backgroundColor: c.soft }]}><Ionicons name="bookmark-outline" size={14} color="#E34E68" /><Text style={{ color: '#E34E68', fontSize: 10, fontWeight: '800' }}>{lang === 'fa' ? 'حذف از ذخیره‌ها' : 'Remove saved'}</Text></Pressable></View>
+        </View>)}
+        {savedMessages.length === 0 && <View style={{ alignItems: 'center', padding: 28, gap: 8 }}><Ionicons name="bookmark-outline" size={32} color={c.primary} /><Text style={{ color: c.text, fontSize: 14, fontWeight: '900' }}>{lang === 'fa' ? 'هنوز پیامی ذخیره نکردی' : 'Nothing saved yet'}</Text><Text style={{ color: c.muted, fontSize: 11, textAlign: 'center', lineHeight: 18 }}>{lang === 'fa' ? 'در یک گفتگو روی آیکون نشانک کنار پیام بزن تا اینجا نمایش داده شود.' : 'Tap the bookmark action under a message to keep it here.'}</Text></View>}
+      </View>
+    </>
+  );
+
   const renderSettings = () => (
     <>
       <Pressable onPress={() => setModal('profile')} style={[styles.profileCard, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
@@ -937,6 +1037,7 @@ function AppContent() {
     { key: 'contacts', icon: 'people-outline', active: 'people' },
     { key: 'groups', icon: 'grid-outline', active: 'grid' },
     { key: 'channels', icon: 'megaphone-outline', active: 'megaphone' },
+    { key: 'saved', icon: 'bookmark-outline', active: 'bookmark' },
     { key: 'settings', icon: 'settings-outline', active: 'settings' }
   ];
 
@@ -998,6 +1099,7 @@ function AppContent() {
           {tab === 'contacts' && renderContacts()}
           {tab === 'groups' && renderCollection('group')}
           {tab === 'channels' && renderCollection('channel')}
+          {tab === 'saved' && renderSavedMessages()}
           {tab === 'settings' && renderSettings()}
         </Animated.View>
       </ScrollView>
@@ -1136,6 +1238,7 @@ function AppContent() {
                           const count = reactions.find(item => item.reaction === emoji)?.count ?? 0;
                           return <Pressable key={emoji} onPress={() => { void reactToMessage(message, emoji); }} style={{ backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 }}><Text style={{ fontSize: 10, color: c.text }}>{emoji}{count ? ' ' + count : ''}</Text></Pressable>;
                         })}
+                        <Pressable onPress={() => toggleSavedMessage(message)} style={{ paddingHorizontal: 4, paddingVertical: 3 }} accessibilityRole="button" accessibilityLabel={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? (lang === 'fa' ? 'حذف از پیام‌های ذخیره‌شده' : 'Remove saved message') : (lang === 'fa' ? 'ذخیره پیام' : 'Save message')}><Ionicons name={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? 'bookmark' : 'bookmark-outline'} size={15} color={savedMessages.some(item => item.id === message.id && item.conversationId === message.conversationId) ? c.primary : c.muted} /></Pressable>
                         <Pressable onPress={() => { setReplyingTo(message); setEditingMessageId(null); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="return-up-back-outline" size={15} color={c.muted} /></Pressable>
                         {mine && !message.id.startsWith('local-') && <Pressable onPress={() => { setEditingMessageId(message.id); setReplyingTo(null); setMessageDraft(message.body); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="create-outline" size={15} color={c.muted} /></Pressable>}
                         {(mine || groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role))) && !message.id.startsWith('local-') && <Pressable onPress={() => { void removeMessage(message); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="trash-outline" size={15} color="#E34E68" /></Pressable>}
@@ -1156,7 +1259,10 @@ function AppContent() {
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                 <Pressable disabled={busy} onPress={() => { void pickMediaForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="image-outline" size={20} color={c.primary} /></Pressable>
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
-                <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { flex: 1, color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
+                <View style={{ flex: 1 }}>
+                  {!!messageDraft.trim() && !editingMessageId && <Text style={{ color: c.muted, fontSize: 9, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'پیش‌نویس به‌صورت خودکار ذخیره می‌شود' : 'Draft saved automatically'}</Text>}
+                  <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
+                </View>
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>
             </> : <>

@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: ''
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -43,6 +42,23 @@ jobs:
 
       - name: Generate Android native project
         run: npx expo prebuild --platform android --no-install
+
+      - name: Install Android NDK with retries
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            echo "Installing NDK, attempt $attempt of 3"
+            yes | sdkmanager --licenses >/dev/null 2>&1
+            sdkmanager --install "ndk;27.1.12297006"
+            if [ $? -eq 0 ] && [ -d "$ANDROID_HOME/ndk/27.1.12297006" ]; then
+              exit 0
+            fi
+            rm -rf "$ANDROID_HOME/ndk/27.1.12297006"
+            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/temp"
+            sleep 5
+          done
+          echo "NDK installation failed after 3 attempts."
+          exit 1
 
       - name: Build Release APK
         working-directory: android

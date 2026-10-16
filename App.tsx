@@ -351,6 +351,7 @@ function AppContent() {
     [rooms, search, chatFilter, pinnedRoomIds]);
 
   const togglePinnedRoom = (room: Room) => {
+    tapFeedback();
     setPinnedRoomIds(previous => previous.includes(room.id)
       ? previous.filter(id => id !== room.id)
       : [room.id, ...previous]);
@@ -708,6 +709,7 @@ function AppContent() {
   };
 
   const openRoom = (room: Room) => {
+    tapFeedback();
     if (!apiToken) {
       showAlert(lang === 'fa' ? 'اول به API وصل شو.' : 'Connect to the API first.');
       setModal('login');
@@ -779,6 +781,7 @@ function AppContent() {
 
   const submitMessage = async () => {
     if (!apiToken || !activeRoom || !messageDraft.trim()) return;
+    tapFeedback();
     const body = messageDraft.trim();
     if (editingMessageId) {
       const targetId = editingMessageId;
@@ -940,7 +943,7 @@ function AppContent() {
           <Text style={[styles.inboxTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'گفت‌وگوها' : 'Messages'}</Text>
           <Text style={[styles.inboxSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'همه ارتباطاتت، مرتب و یک‌جا' : 'Every conversation, neatly in one place'}</Text>
         </View>
-        <Pressable onPress={() => setTab('contacts')} style={[styles.newChatFab, { backgroundColor: c.primary }]} accessibilityRole="button">
+        <Pressable onPress={() => { tapFeedback(); setTab('contacts'); }} style={[styles.newChatFab, { backgroundColor: c.primary }]} accessibilityRole="button">
           <Ionicons name="create-outline" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -1163,7 +1166,7 @@ function AppContent() {
             </>}
             <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'رمز عبور (حداقل ۸ نویسه)' : 'Password (8+ characters)'}</Text>
             <TextInput value={loginPassword} onChangeText={setLoginPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} placeholder="••••••••" placeholderTextColor={c.muted} returnKeyType="done" onSubmitEditing={() => { void loginToApi(); }} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left', paddingVertical: 14 }]} />
-            <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1, marginTop: 16, borderRadius: 15, paddingVertical: 16 }]}>
+            <Pressable disabled={busy} onPress={() => { tapFeedback(); void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1, marginTop: 16, borderRadius: 15, paddingVertical: 16 }]}>
               <Text style={styles.primaryButtonText}>{busy ? (lang === 'fa' ? 'لطفاً صبر کن…' : 'Please wait…') : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به وطن' : 'Sign in to Vatan') : (lang === 'fa' ? 'ساخت حساب و ادامه' : 'Create account & continue'))}</Text>
             </Pressable>
             <Text style={{ color: c.muted, fontSize: 10, lineHeight: 16, marginTop: 12, textAlign: 'center' }}>{lang === 'fa' ? 'با ورود یا ثبت‌نام، وارد فضای پیام‌رسان می‌شوی.' : 'Sign in or sign up to enter the messenger.'}</Text>

@@ -37,9 +37,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
 
@@ -47,12 +44,22 @@ jobs:
         run: npx expo prebuild --platform android --no-install
 
       - name: Install Android NDK with retries
+        shell: bash
         run: |
           set +e
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Could not find sdkmanager under $ANDROID_HOME/cmdline-tools"
+            exit 1
+          fi
+          echo "Using SDK manager: $SDKMANAGER"
+          export PATH="$(dirname "$SDKMANAGER"):$ANDROID_HOME/platform-tools:$PATH"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1
           for attempt in 1 2 3; do
             echo "Installing NDK, attempt $attempt of 3"
-            yes | sdkmanager --licenses >/dev/null 2>&1
-            sdkmanager --install "ndk;27.1.12297006"
+            "$SDKMANAGER" --install "ndk;27.1.12297006"
             if [ $? -eq 0 ] && [ -d "$ANDROID_HOME/ndk/27.1.12297006" ]; then
               exit 0
             fi

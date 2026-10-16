@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -131,6 +131,7 @@ const COPY = {
 };
 
 function AppContent() {
+  const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({ Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black });
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
@@ -1180,7 +1181,7 @@ function AppContent() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.17 : 0.09, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
@@ -1211,9 +1212,9 @@ function AppContent() {
       </View>
 
       <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType="slide" onRequestClose={() => setModal(null)}>
-        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
-          <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet]}>
+          <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10) }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
@@ -1420,15 +1421,15 @@ const styles = StyleSheet.create({
   inboxList: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
   emptyIllustration: { width: 60, height: 60, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   inboxHint: { textAlign: 'center', fontSize: 10, lineHeight: 16, marginTop: 10, marginBottom: 4 },
-  bottomNav: { minHeight: 78, marginHorizontal: 10, marginBottom: Platform.OS === 'ios' ? 8 : 5, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 12 : 8, paddingHorizontal: 5, borderWidth: 1, borderRadius: 25, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.13, shadowRadius: 22, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
+  bottomNav: { minHeight: 72, marginHorizontal: 8, marginTop: 4, marginBottom: Platform.OS === 'ios' ? 4 : 2, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 3, borderWidth: 1, borderRadius: 23, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.13, shadowRadius: 22, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
   navItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 15 },
-  navIconWrap: { width: 42, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  navIconWrap: { width: 38, height: 30, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   ambientOrb: { position: 'absolute', width: 250, height: 250, borderRadius: 125 },
   ambientOrbTop: { top: 80, right: -120 },
   ambientOrbBottom: { bottom: 100, left: -150 },
   authLogoGlow: { position: 'absolute', width: 132, height: 132, borderRadius: 66, backgroundColor: '#8B7CFF', opacity: 0.12, top: -22 },
-  fullChatSheet: { flex: 1, width: '100%', maxHeight: '100%', height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: Platform.OS === 'ios' ? 54 : 20, paddingBottom: Platform.OS === 'ios' ? 28 : 16, paddingHorizontal: 16 },
-  fullChatMessages: { flex: 1, maxHeight: undefined },
+  fullChatSheet: { flex: 1, width: '100%', maxHeight: '100%', height: '100%', minHeight: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingHorizontal: 12 },
+  fullChatMessages: { flex: 1, minHeight: 0, maxHeight: undefined },
   memberAddButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   authModeSwitch: { borderRadius: 14, padding: 4, gap: 4, marginBottom: 10 },
   authModeItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 10 },
@@ -1439,7 +1440,7 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 11, marginTop: 2 },
   avatarButton: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarSmall: { width: 42, height: 42 },
-  scrollContent: { paddingHorizontal: 18, paddingBottom: 24 },
+  scrollContent: { paddingHorizontal: 14, paddingBottom: 16, flexGrow: 1 },
   hero: { borderRadius: 26, padding: 20, marginBottom: 18, overflow: 'hidden' },
   heroGlow: { position: 'absolute', width: 140, height: 140, borderRadius: 70, opacity: 0.10, top: -48, right: -28 },
   heroEyebrow: { fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginBottom: 12 },
@@ -1455,7 +1456,7 @@ const styles = StyleSheet.create({
   sectionRow: { alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '900' },
   listCard: { borderRadius: 22, paddingHorizontal: 14, overflow: 'hidden' },
-  chatRow: { alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  chatRow: { alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 2, borderBottomWidth: StyleSheet.hairlineWidth },
   chatInfo: { flex: 1, gap: 6 },
   chatTitle: { fontSize: 13, fontWeight: '800' },
   chatSubtitle: { fontSize: 11, maxWidth: '100%' },
@@ -1482,7 +1483,7 @@ const styles = StyleSheet.create({
   loginButton: { marginTop: 22, borderRadius: 15, borderWidth: 1, padding: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 9 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#080B18A8' },
   modalDismiss: { flex: 1 },
-  modalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 32 : 20, maxHeight: '92%' },
+  modalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 18, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 16, maxHeight: '92%', width: '100%', alignSelf: 'center' },
   modalHandle: { width: 42, height: 4, borderRadius: 3, alignSelf: 'center', marginBottom: 16 },
   modalHeader: { justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
   modalTitle: { fontSize: 20, fontWeight: '900' },

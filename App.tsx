@@ -1183,9 +1183,9 @@ function AppContent() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
-      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-        <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.17 : 0.09, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
-        <View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.08 : 0.06 }]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+        <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
+        <View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03 }]} />
       </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1424,9 +1424,9 @@ const styles = StyleSheet.create({
   bottomNav: { minHeight: 72, marginHorizontal: 8, marginTop: 4, marginBottom: Platform.OS === 'ios' ? 4 : 2, paddingTop: 6, paddingBottom: 6, paddingHorizontal: 3, borderWidth: 1, borderRadius: 23, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.13, shadowRadius: 22, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
   navItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 15 },
   navIconWrap: { width: 38, height: 30, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  ambientOrb: { position: 'absolute', width: 250, height: 250, borderRadius: 125 },
-  ambientOrbTop: { top: 80, right: -120 },
-  ambientOrbBottom: { bottom: 100, left: -150 },
+  ambientOrb: { position: 'absolute', width: 160, height: 160, borderRadius: 80 },
+  ambientOrbTop: { top: 52, right: -76 },
+  ambientOrbBottom: { bottom: 80, left: -96 },
   authLogoGlow: { position: 'absolute', width: 132, height: 132, borderRadius: 66, backgroundColor: '#8B7CFF', opacity: 0.12, top: -22 },
   fullChatSheet: { flex: 1, width: '100%', maxHeight: '100%', height: '100%', minHeight: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingHorizontal: 12 },
   fullChatMessages: { flex: 1, minHeight: 0, maxHeight: undefined },

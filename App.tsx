@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
 import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 
 
 Notifications.setNotificationHandler({
@@ -134,7 +135,8 @@ function AppContent() {
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
   const [lang, setLang] = useState<Language>('fa');
-  const [theme, setTheme] = useState<ThemeMode>('light');
+  const [theme, setTheme] = useState<ThemeMode>('dark');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [tab, setTab] = useState<Tab>('chats');
   const [displayName, setDisplayName] = useState('هیراد');
   const [username, setUsername] = useState('hirad');
@@ -179,13 +181,37 @@ function AppContent() {
   const [appPrefsReady, setAppPrefsReady] = useState(false);
 
   const t = COPY[lang];
+  const tapFeedback = () => {
+    if (Platform.OS !== 'web') void Haptics.selectionAsync().catch(() => undefined);
+  };
+  const toggleNotifications = async (enabled: boolean) => {
+    if (!enabled) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      showAlert(lang === 'fa' ? 'اعلان‌های این نسخه به پشتیبانی مرورگر نیاز دارند؛ در نسخه اندروید از مجوز سیستم استفاده می‌شود.' : 'Browser notifications require browser support. The Android app uses system notification permission.');
+      return;
+    }
+    try {
+      let permission = await Notifications.getPermissionsAsync();
+      if (!permission.granted) permission = await Notifications.requestPermissionsAsync();
+      setNotificationsEnabled(permission.granted);
+      if (!permission.granted) showAlert(lang === 'fa' ? 'مجوز اعلان از تنظیمات اندروید قابل فعال‌سازی است.' : 'Enable notification permission in Android settings.');
+      else if (!(Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId)) {
+        showAlert(lang === 'fa' ? 'مجوز دستگاه فعال شد؛ برای دریافت پیام هنگام بسته بودن برنامه، تنظیم ارسال Push روی سرور هم باید پیکربندی شود.' : 'Device permission is enabled. Server push delivery must also be configured for notifications while the app is closed.');
+      }
+    } catch {
+      showAlert(lang === 'fa' ? 'بررسی مجوز اعلان ممکن نشد.' : 'Could not check notification permission.');
+    }
+  };
   const dark = theme === 'dark';
   const c = dark ? {
-    bg: '#0B1020', surface: '#131B2E', card: '#182238', text: '#F2F5FC', muted: '#96A3BB',
-    border: '#27344D', primary: '#8B83FF', soft: '#25254A', input: '#10182A'
+    bg: '#080D1A', surface: '#10182A', card: '#151F35', text: '#F5F7FF', muted: '#9AA8C2',
+    border: '#26334E', primary: '#8B7CFF', soft: '#24264A', input: '#0C1425'
   } : {
-    bg: '#F5F7FC', surface: '#FFFFFF', card: '#FFFFFF', text: '#172033', muted: '#7D879A',
-    border: '#E7EAF2', primary: '#5B52E8', soft: '#EFEEFF', input: '#F6F7FB'
+    bg: '#F4F5FC', surface: '#FFFFFF', card: '#FFFFFF', text: '#171A32', muted: '#747D96',
+    border: '#E5E7F2', primary: '#635BEE', soft: '#EFEDFF', input: '#F7F7FC'
   };
   const isRTL = lang === 'fa';
 
@@ -197,9 +223,10 @@ function AppContent() {
         if (!cancelled && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
-            const prefs = parsed as { theme?: unknown; lang?: unknown };
+            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown };
             if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
             if (prefs.lang === 'fa' || prefs.lang === 'en') setLang(prefs.lang);
+            if (typeof prefs.notificationsEnabled === 'boolean') setNotificationsEnabled(prefs.notificationsEnabled);
           }
         }
       } catch { /* Keep defaults when preferences are unavailable. */ }
@@ -211,8 +238,8 @@ function AppContent() {
 
   useEffect(() => {
     if (!appPrefsReady) return;
-    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang })).catch(() => undefined);
-  }, [theme, lang, appPrefsReady]);
+    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled })).catch(() => undefined);
+  }, [theme, lang, notificationsEnabled, appPrefsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -841,15 +868,26 @@ function AppContent() {
   const groupAccent = ({ violet: '#5B52E8', blue: '#2878E8', green: '#159A73', rose: '#E34E86', amber: '#D98B16', midnight: '#202B45', ocean: '#008DA8' } as Record<string, string>)[groupSettings?.themeKey ?? 'violet'] ?? c.primary;
 
   const Header = ({ title, subtitle }: { title: string; subtitle?: string }) => (
-    <View style={[styles.header, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-      <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
-        <Text style={[styles.brandSmall, { color: c.primary }]}>{title}</Text>
-        {!!subtitle && <Text style={[styles.headerSub, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{subtitle}</Text>}
+    <Animated.View style={[styles.headerShell, {
+      backgroundColor: dark ? 'rgba(16,24,42,0.84)' : 'rgba(255,255,255,0.9)',
+      borderColor: c.border,
+      opacity: heroMotion,
+      transform: [{ translateY: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }]
+    }]}>
+      <BlurView intensity={dark ? 32 : 45} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+      <View style={[styles.header, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <View style={[styles.headerBrandMark, { backgroundColor: c.primary }]}>
+          <Ionicons name="chatbubbles" size={21} color="#FFFFFF" />
+        </View>
+        <View style={{ flex: 1, alignItems: isRTL ? 'flex-end' : 'flex-start' }}>
+          <Text style={[styles.brandSmall, { color: c.text }]}>{title}</Text>
+          {!!subtitle && <Text style={[styles.headerSub, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{subtitle}</Text>}
+        </View>
+        <Pressable onPress={() => { tapFeedback(); setModal('profile'); }} style={[styles.avatarButton, { backgroundColor: c.soft, borderColor: c.border, borderWidth: 1 }]}>
+          {photo ? <Image source={{ uri: photo }} style={styles.avatarSmall} /> : <Ionicons name="person" size={20} color={c.primary} />}
+        </Pressable>
       </View>
-      <Pressable onPress={() => setModal('profile')} style={[styles.avatarButton, { backgroundColor: c.soft }]}>
-        {photo ? <Image source={{ uri: photo }} style={styles.avatarSmall} /> : <Ionicons name="person" size={20} color={c.primary} />}
-      </Pressable>
-    </View>
+    </Animated.View>
   );
 
   const Avatar = ({ icon, color, size = 54, uri }: { icon: string; color: string; size?: number; uri?: string | null }) => (
@@ -1051,13 +1089,24 @@ function AppContent() {
       </View>
       <Text style={[styles.settingSection, { color: c.muted }]}>{t.account}</Text>
       <View style={[styles.settingCard, { backgroundColor: c.surface, borderColor: c.border }]}>
-        {[['lock-closed-outline', t.privacy], ['notifications-outline', t.notifications], ['information-circle-outline', t.about]].map(([icon, title]) => (
-          <Pressable key={title} onPress={() => showAlert(lang === 'fa' ? 'این بخش در نسخه‌های بعدی تکمیل می‌شود.' : 'This section will be completed in a future release.')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-            <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name={icon as any} size={20} color={c.primary} /></View>
-            <Text style={[styles.settingLabel, { color: c.text }]}>{title}</Text>
-            <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={c.muted} />
-          </Pressable>
-        ))}
+        <Pressable onPress={() => showAlert(lang === 'fa' ? 'نشست فعلی با رمز عبور محافظت می‌شود. از «خروج از همه دستگاه‌ها» برای لغو نشست‌های دیگر استفاده کن. رمز عبور را با کسی به اشتراک نگذار.' : 'Your session is password-protected. Use “Sign out all devices” to revoke other sessions. Never share your password.')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="shield-checkmark-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text }]}>{t.privacy}</Text>
+          <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={c.muted} />
+        </Pressable>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="notifications-outline" size={20} color={c.primary} /></View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={[styles.settingLabel, { color: c.text }]}>{t.notifications}</Text>
+            <Text style={{ color: c.muted, fontSize: 10, lineHeight: 15 }}>{lang === 'fa' ? 'مجوز اعلان‌های دستگاه' : 'Device notification permission'}</Text>
+          </View>
+          <Switch value={notificationsEnabled} onValueChange={v => { void toggleNotifications(v); }} trackColor={{ true: c.primary, false: c.border }} />
+        </View>
+        <Pressable onPress={() => showAlert(lang === 'fa' ? 'پیام‌رسان وطن · نسخه ۱.۰.۰\\nرابط بومی React Native · فارسی و انگلیسی\\nسرور پیام‌ها: binercraft.ir' : 'Vatan Messenger · version 1.0.0\\nNative React Native interface · Persian and English\\nMessaging API: binercraft.ir')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="information-circle-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text }]}>{t.about}</Text>
+          <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={c.muted} />
+        </Pressable>
       </View>
       <Pressable onPress={signOut} disabled={busy} style={[styles.loginButton, { borderColor: c.border }]}><Ionicons name="log-out-outline" size={19} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'خروج از حساب' : 'Sign out'}</Text></Pressable>
       <Pressable onPress={signOutEverywhere} disabled={busy} style={[styles.loginButton, { borderColor: c.border, marginTop: 8 }]}><Ionicons name="phone-portrait-outline" size={19} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'خروج از همه دستگاه‌ها' : 'Sign out all devices'}</Text></Pressable>
@@ -1086,14 +1135,19 @@ function AppContent() {
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bg, justifyContent: 'center' }]} edges={['top', 'bottom', 'left', 'right']}>
         <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 28 }} keyboardShouldPersistTaps="handled">
-          <View style={{ alignItems: 'center', marginBottom: 28 }}>
-            <View style={{ width: 82, height: 82, borderRadius: 27, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 16, shadowColor: c.primary, shadowOpacity: 0.28, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }}>
-              <Ionicons name="chatbubbles" size={42} color="#FFFFFF" />
+          <Animated.View style={{ alignItems: 'center', marginBottom: 28, opacity: heroMotion, transform: [{ translateY: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }] }}>
+            <View style={styles.authLogoGlow} />
+            <View style={{ width: 88, height: 88, borderRadius: 29, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 16, shadowColor: c.primary, shadowOpacity: 0.4, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 10, borderWidth: 1, borderColor: '#FFFFFF33' }}>
+              <Ionicons name="chatbubbles" size={43} color="#FFFFFF" />
             </View>
             <Text style={{ color: c.text, fontSize: 32, fontWeight: '900' }}>{lang === 'fa' ? 'وطن' : 'Vatan'}</Text>
             <Text style={{ color: c.muted, fontSize: 13, marginTop: 5, textAlign: 'center' }}>{lang === 'fa' ? 'ارتباط، نزدیک‌تر از همیشه' : 'Closer, wherever you are'}</Text>
-          </View>
-          <View style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 26, padding: 20, shadowColor: '#172033', shadowOpacity: 0.06, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 3 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 30, backgroundColor: c.soft, borderWidth: 1, borderColor: c.border }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#23C99A' }} />
+              <Text style={{ color: c.muted, fontSize: 10, fontWeight: '700' }}>{lang === 'fa' ? 'پیام‌رسان مستقل و امن' : 'Your independent messenger'}</Text>
+            </View>
+          </Animated.View>
+          <View style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 28, padding: 20, shadowColor: c.primary, shadowOpacity: dark ? 0.16 : 0.06, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 5 }}>
             <Text style={{ color: c.text, fontSize: 22, fontWeight: '900', textAlign: isRTL ? 'right' : 'left' }}>{loginMode === 'login' ? (lang === 'fa' ? 'خوش برگشتی 👋' : 'Welcome back 👋') : (lang === 'fa' ? 'به وطن بپیوند' : 'Join Vatan')}</Text>
             <Text style={{ color: c.muted, fontSize: 12, lineHeight: 19, marginTop: 6, marginBottom: 18, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'برای ادامه، وارد حساب شو یا حساب جدید بساز.' : 'Sign in or create an account to continue.'}</Text>
             <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
@@ -1125,6 +1179,10 @@ function AppContent() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.17 : 0.09, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
+        <View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.08 : 0.06 }]} />
+      </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Animated.View style={{ opacity: tabMotion, transform: [{ translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [9, 0] }) }] }}>
@@ -1136,12 +1194,14 @@ function AppContent() {
           {tab === 'settings' && renderSettings()}
         </Animated.View>
       </ScrollView>
-      <View style={[styles.bottomNav, { backgroundColor: dark ? 'rgba(19,27,46,0.78)' : 'rgba(255,255,255,0.82)', borderTopColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+      <View style={[styles.bottomNav, { backgroundColor: dark ? 'rgba(14,21,38,0.88)' : 'rgba(255,255,255,0.9)', borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <BlurView intensity={dark ? 45 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         {navItems.map(item => {
           const active = tab === item.key;
-          return <Pressable key={item.key} onPress={() => setTab(item.key)} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
-            <View style={[styles.navIconWrap, active && { backgroundColor: c.soft }]}><Ionicons name={active ? item.active : item.icon} size={21} color={active ? c.primary : c.muted} /></View>
+          return <Pressable key={item.key} onPress={() => { tapFeedback(); setTab(item.key); }} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
+            <Animated.View style={[styles.navIconWrap, active && { backgroundColor: c.soft, borderColor: c.primary + '44', borderWidth: 1 }, active && { transform: [{ scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }] }]}>
+              <Ionicons name={active ? item.active : item.icon} size={21} color={active ? c.primary : c.muted} />
+            </Animated.View>
             <Text style={{ fontSize: 10, color: active ? c.primary : c.muted, fontWeight: active ? '800' : '500' }}>{labelForTab(item.key)}</Text>
           </Pressable>;
         })}
@@ -1357,16 +1417,22 @@ const styles = StyleSheet.create({
   inboxList: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 3, overflow: 'hidden' },
   emptyIllustration: { width: 60, height: 60, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   inboxHint: { textAlign: 'center', fontSize: 10, lineHeight: 16, marginTop: 10, marginBottom: 4 },
-  bottomNav: { minHeight: 78, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 14 : 9, paddingHorizontal: 8, borderTopWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#172033', shadowOpacity: 0.07, shadowRadius: 18, shadowOffset: { width: 0, height: -5 }, elevation: 12 },
+  bottomNav: { minHeight: 78, marginHorizontal: 10, marginBottom: Platform.OS === 'ios' ? 8 : 5, paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 12 : 8, paddingHorizontal: 5, borderWidth: 1, borderRadius: 25, alignItems: 'center', justifyContent: 'space-around', overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.13, shadowRadius: 22, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
   navItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 2, paddingVertical: 2, borderRadius: 15 },
-  navIconWrap: { width: 44, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  navIconWrap: { width: 42, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  ambientOrb: { position: 'absolute', width: 250, height: 250, borderRadius: 125 },
+  ambientOrbTop: { top: 80, right: -120 },
+  ambientOrbBottom: { bottom: 100, left: -150 },
+  authLogoGlow: { position: 'absolute', width: 132, height: 132, borderRadius: 66, backgroundColor: '#8B7CFF', opacity: 0.12, top: -22 },
   fullChatSheet: { flex: 1, width: '100%', maxHeight: '100%', height: '100%', borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: Platform.OS === 'ios' ? 54 : 20, paddingBottom: Platform.OS === 'ios' ? 28 : 16, paddingHorizontal: 16 },
   fullChatMessages: { flex: 1, maxHeight: undefined },
   memberAddButton: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   authModeSwitch: { borderRadius: 14, padding: 4, gap: 4, marginBottom: 10 },
   authModeItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 10 },
-  header: { paddingHorizontal: 22, paddingTop: 10, paddingBottom: 16, alignItems: 'center', gap: 12 },
-  brandSmall: { fontSize: 25, fontWeight: '900', letterSpacing: -0.6 },
+  headerShell: { marginHorizontal: 12, marginTop: 4, marginBottom: 10, borderWidth: 1, borderRadius: 23, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  header: { paddingHorizontal: 13, paddingTop: 10, paddingBottom: 10, alignItems: 'center', gap: 11 },
+  headerBrandMark: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center', shadowColor: '#635BEE', shadowOpacity: 0.24, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  brandSmall: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
   headerSub: { fontSize: 11, marginTop: 2 },
   avatarButton: { width: 42, height: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarSmall: { width: 42, height: 42 },

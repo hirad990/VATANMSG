@@ -1394,7 +1394,7 @@ function AppContent() {
               <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به حساب' : 'Sign in') : (lang === 'fa' ? 'ساخت حساب' : 'Create account'))}</Text></Pressable>
             </>}
             <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>

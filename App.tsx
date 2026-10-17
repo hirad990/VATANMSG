@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -168,6 +168,7 @@ function AppContent() {
   const [userId, setUserId] = useState<string | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<VatanMessage[]>([]);
+  const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
   const [messageDraft, setMessageDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<VatanMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -807,11 +808,13 @@ function AppContent() {
       username, displayName, avatarUrl: photo, body, createdAt: new Date().toISOString(),
       replyToId: replyingTo?.id ?? null, status: 'sending', clientMessageId
     };
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages(previous => [...previous, optimistic]);
     setMessageDraft('');
     setReplyingTo(null);
     try {
       const result = await sendMessage(apiToken, activeRoom.id, body, { replyToId: optimistic.replyToId, clientMessageId });
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => previous.map(message => message.id === localId ? { ...result.message, status: 'sent', clientMessageId } : message));
     } catch (error) {
       setMessages(previous => previous.map(message => message.id === localId ? { ...message, status: 'failed' } : message));
@@ -1221,7 +1224,7 @@ function AppContent() {
       </View>
 
       <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => setModal(null)}>
-        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
@@ -1346,12 +1349,12 @@ function AppContent() {
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
                     <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
                     <View style={{ maxWidth: '88%' }}>
-                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}</Text>
+                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text>
                       <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                         {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
-                          {file.mimeType.startsWith('image/') ? <Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 44, height: 44, borderRadius: 8 }} /> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />}
+                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />
                           <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}
@@ -1386,7 +1389,7 @@ function AppContent() {
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
                 <View style={{ flex: 1 }}>
                   {!!messageDraft.trim() && !editingMessageId && <Text style={{ color: c.muted, fontSize: 9, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'پیش‌نویس به‌صورت خودکار ذخیره می‌شود' : 'Draft saved automatically'}</Text>}
-                  <TextInput value={messageDraft} onChangeText={setMessageDraft} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
+                  <TextInput value={messageDraft} onChangeText={setMessageDraft} returnKeyType="send" blurOnSubmit={true} onSubmitEditing={() => { void submitMessage(); }} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
                 </View>
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>
@@ -1406,6 +1409,14 @@ function AppContent() {
             <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
           </Animated.View>
         </KeyboardAvoidingView>
+      </Modal>
+      <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
+        <Pressable onPress={() => setImageViewerUri(null)} style={{ flex: 1, backgroundColor: '#000000F2', alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable onPress={() => setImageViewerUri(null)} style={{ position: 'absolute', top: Math.max(insets.top, 18), right: 20, zIndex: 2, width: 42, height: 42, borderRadius: 21, backgroundColor: '#FFFFFF22', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="close" size={26} color="#FFFFFF" />
+          </Pressable>
+          {!!imageViewerUri && <Image source={{ uri: imageViewerUri, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} resizeMode="contain" style={{ width: '100%', height: '82%' }} />}
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );

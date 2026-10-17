@@ -13,6 +13,7 @@ export type VatanConversation = {
   title: string;
   description: string | null;
   role?: 'owner' | 'admin' | 'member' | 'subscriber';
+  avatarUrl?: string | null;
   lastMessage?: string | null;
   lastMessageAt?: string | null;
 };
@@ -86,6 +87,7 @@ function normalizeConversation(value: any): VatanConversation {
     title: String(value.title ?? ''),
     description: value.description ?? null,
     role: value.role,
+    avatarUrl: value.avatarUrl ?? value.otherUser?.avatarUrl ?? value.other_user?.avatar_url ?? null,
     lastMessage: value.lastMessage ?? value.last_message ?? null,
     lastMessageAt: value.lastMessageAt ?? value.last_message_at ?? null
   };

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -89,7 +89,7 @@ type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
 type SavedMessage = VatanMessage & { savedAt: string };
-type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct' };
+type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber' };
 
 const COPY = {
   fa: {
@@ -135,6 +135,8 @@ function AppContent() {
   const [fontsLoaded] = useFonts({ Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black });
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
+  const chatTransition = useRef(new Animated.Value(0)).current;
+  const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -408,7 +410,8 @@ function AppContent() {
       title: item.title,
       subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
       icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
-      kind: item.kind
+      kind: item.kind,
+      role: item.role
     })));
   };
 
@@ -527,7 +530,8 @@ function AppContent() {
         title: conversation.title,
         subtitle: conversation.description || (lang === 'fa' ? 'تازه ساخته شده' : 'Just created'),
         icon: conversation.kind === 'channel' ? 'megaphone' : 'people',
-        kind: conversation.kind
+        kind: conversation.kind,
+        role: conversation.role
       };
       setRooms(prev => [room, ...prev.filter(item => item.id !== room.id)]);
       setRoomName('');
@@ -711,6 +715,8 @@ function AppContent() {
 
   const openRoom = (room: Room) => {
     tapFeedback();
+    chatTransition.setValue(isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width);
+    Animated.spring(chatTransition, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 220, mass: 0.8 }).start();
     if (!apiToken) {
       showAlert(lang === 'fa' ? 'اول به API وصل شو.' : 'Connect to the API first.');
       setModal('login');
@@ -911,7 +917,9 @@ function AppContent() {
 
   const renderRoom = (room: Room) => {
     const pinned = pinnedRoomIds.includes(room.id);
-    return <Pressable key={room.id} onPress={() => openRoom(room)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
+    const pressScale = roomPressScales[room.id] ?? (roomPressScales[room.id] = new Animated.Value(1));
+    const animatePress = (toValue: number) => Animated.spring(pressScale, { toValue, useNativeDriver: true, speed: 30, bounciness: 5 }).start();
+    return <Animated.View key={room.id} style={{ transform: [{ scale: pressScale }] }}><Pressable onPress={() => openRoom(room)} onPressIn={() => animatePress(0.975)} onPressOut={() => animatePress(1)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
       style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, paddingHorizontal: 8, borderRadius: 16, backgroundColor: pinned ? c.soft + '66' : 'transparent' }]}>
       <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} />
       <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
@@ -920,12 +928,13 @@ function AppContent() {
           {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
         </View>
         <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
+        {room.kind === 'channel' && <Text numberOfLines={1} style={{ color: c.primary, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{lang === 'fa' ? `شناسه کانال: ${room.id}` : `Channel ID: ${room.id}`}</Text>}
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
         onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>
         <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={17} color={pinned ? c.primary : c.muted} />
       </Pressable>
-    </Pressable>;
+    </Pressable></Animated.View>;
   };
 
   const renderHome = () => {
@@ -1211,16 +1220,17 @@ function AppContent() {
         })}
       </View>
 
-      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType="slide" onRequestClose={() => setModal(null)}>
-        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => setModal(null)}>
+        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
-          <View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                {modal === 'chat' && activeRoom && (activeRoom.kind === 'group' || activeRoom.kind === 'channel') && activeRoom.role === 'owner' && <Pressable onPress={() => removeRoom(activeRoom)} onPressIn={tapFeedback} accessibilityLabel={lang === 'fa' ? 'حذف گروه یا کانال' : 'Delete group or channel'}><Ionicons name="trash-outline" size={21} color="#F87171" /></Pressable>}
                 <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
@@ -1394,7 +1404,7 @@ function AppContent() {
               <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به حساب' : 'Sign in') : (lang === 'fa' ? 'ساخت حساب' : 'Create account'))}</Text></Pressable>
             </>}
             <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>

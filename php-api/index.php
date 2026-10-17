@@ -170,6 +170,24 @@ function api_join_conversation(): never
     api_response(['success' => true, 'alreadyMember' => false], 201);
 }
 
+function api_delete_conversation(): never
+{
+    api_method('DELETE', 'POST');
+    $user = api_user();
+    $data = api_input();
+    $id = filter_var($data['conversation_id'] ?? $_GET['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+
+    $membership = api_require_membership((int)$id, (int)$user['id']);
+    if ($membership['type'] === 'private') api_response(['error' => 'Private conversations cannot be deleted here'], 422);
+    if ($membership['role'] !== 'owner') api_response(['error' => 'Only the conversation owner can delete it'], 403);
+
+    // Conversation foreign keys cascade to members and messages.
+    $stmt = api_db()->prepare('DELETE FROM conversations WHERE id = ?');
+    $stmt->execute([$id]);
+    api_response(['success' => true]);
+}
+
 function api_leave_conversation(): never
 {
     api_method('POST');
@@ -1336,6 +1354,9 @@ try {
             break;
         case 'conversations/leave':
             api_leave_conversation();
+            break;
+        case 'conversations/delete':
+            api_delete_conversation();
             break;
         case 'conversations/add-member':
             api_add_conversation_member();

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -16,6 +16,8 @@ import { addConversationMember, createChannel, createDirectConversation, createG
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
+
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -89,7 +91,7 @@ type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
 type SavedMessage = VatanMessage & { savedAt: string };
-type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber' };
+type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber'; avatarUrl?: string | null };
 
 const COPY = {
   fa: {
@@ -339,7 +341,9 @@ function AppContent() {
           title: item.title,
           subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
           icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
-          kind: item.kind
+          kind: item.kind,
+          role: item.role,
+          avatarUrl: item.avatarUrl
         })));
       } catch {
         // Preserve the current list during temporary network interruptions.
@@ -439,7 +443,9 @@ function AppContent() {
           title: item.title,
           subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
           icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
-          kind: item.kind
+          kind: item.kind,
+          role: item.role,
+          avatarUrl: item.avatarUrl
         })));
         void registerPushForSession(token);
       } catch {
@@ -593,7 +599,7 @@ function AppContent() {
     setBusy(true);
     try {
       const conversation = (await createDirectConversation(apiToken, person.username)).conversation;
-      const room: Room = { id: conversation.id, title: conversation.title || person.displayName, subtitle: '@' + person.username, icon: 'person', kind: 'direct' };
+      const room: Room = { id: conversation.id, title: conversation.title || person.displayName, subtitle: '@' + person.username, icon: 'person', kind: 'direct', avatarUrl: person.avatarUrl };
       setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
       setTab('chats'); setActiveRoom(room); setMessages([]); setMessageDraft(''); setModal('chat');
     } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not start chat.'); }
@@ -924,7 +930,7 @@ function AppContent() {
     const animatePress = (toValue: number) => Animated.spring(pressScale, { toValue, useNativeDriver: true, speed: 30, bounciness: 5 }).start();
     return <Animated.View key={room.id} style={{ transform: [{ scale: pressScale }] }}><Pressable onPress={() => openRoom(room)} onPressIn={() => animatePress(0.975)} onPressOut={() => animatePress(1)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
       style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, paddingHorizontal: 8, borderRadius: 16, backgroundColor: pinned ? c.soft + '66' : 'transparent' }]}>
-      <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} />
+      <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} uri={room.avatarUrl} />
       <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
         <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
           <Text numberOfLines={1} style={[styles.chatTitle, { color: c.text, flexShrink: 1 }]}>{room.title}</Text>
@@ -1241,7 +1247,7 @@ function AppContent() {
               <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? `${selectedMessageIds.length} پیام انتخاب شده. پیام‌های متنی به گفت‌وگوی مقصد فرستاده می‌شوند.` : `${selectedMessageIds.length} messages selected. Text content will be sent to the destination chat.`}</Text>
               <ScrollView style={{ maxHeight: '65%' }}>
                 {rooms.map(room => <Pressable key={room.id} disabled={busy} onPress={() => { void forwardSelectedMessages(room); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, opacity: busy ? 0.5 : 1 }]}>
-                  <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={42} />
+                  <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={42} uri={room.avatarUrl} />
                   <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{room.title}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>{room.kind === 'group' ? t.groups : room.kind === 'channel' ? t.channels : (lang === 'fa' ? 'شخصی' : 'Private')}</Text></View>
                   <Ionicons name="arrow-redo-outline" size={19} color={c.primary} />
                 </Pressable>)}

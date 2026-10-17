@@ -934,7 +934,7 @@ function AppContent() {
         onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>
         <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={17} color={pinned ? c.primary : c.muted} />
       </Pressable>
-    </Pressable>;
+    </Pressable></Animated.View>;
   };
 
   const renderHome = () => {

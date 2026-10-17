@@ -225,6 +225,13 @@ export async function leaveConversation(token: string, conversationId: string): 
   });
 }
 
+export async function deleteConversation(token: string, conversationId: string): Promise<void> {
+  await request('/conversations/delete', token, {
+    method: 'DELETE',
+    body: JSON.stringify({ conversation_id: Number(conversationId) })
+  });
+}
+
 export async function addConversationMember(token: string, conversationId: string, username: string): Promise<void> {
   await request('/conversations/add-member', token, {
     method: 'POST',

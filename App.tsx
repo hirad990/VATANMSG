@@ -89,7 +89,7 @@ type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
 type SavedMessage = VatanMessage & { savedAt: string };
-type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct' };
+type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber' };
 
 const COPY = {
   fa: {
@@ -408,7 +408,8 @@ function AppContent() {
       title: item.title,
       subtitle: item.lastMessage || item.description || (lang === 'fa' ? 'گفت‌وگوی وطن' : 'Vatan conversation'),
       icon: item.kind === 'channel' ? 'megaphone' : item.kind === 'direct' ? 'person' : 'people',
-      kind: item.kind
+      kind: item.kind,
+      role: item.role
     })));
   };
 
@@ -527,7 +528,8 @@ function AppContent() {
         title: conversation.title,
         subtitle: conversation.description || (lang === 'fa' ? 'تازه ساخته شده' : 'Just created'),
         icon: conversation.kind === 'channel' ? 'megaphone' : 'people',
-        kind: conversation.kind
+        kind: conversation.kind,
+        role: conversation.role
       };
       setRooms(prev => [room, ...prev.filter(item => item.id !== room.id)]);
       setRoomName('');

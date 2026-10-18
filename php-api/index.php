@@ -612,6 +612,8 @@ function api_list_conversations(): never
         'SELECT c.id, c.title,
                 (SELECT u.display_name FROM conversation_members cm2 JOIN users u ON u.id = cm2.user_id
                  WHERE cm2.conversation_id = c.id AND cm2.user_id <> cm.user_id LIMIT 1) AS direct_title,
+                (SELECT u.avatar_url FROM conversation_members cm2 JOIN users u ON u.id = cm2.user_id
+                 WHERE cm2.conversation_id = c.id AND cm2.user_id <> cm.user_id LIMIT 1) AS direct_avatar_url,
                 c.description, c.type, c.created_by, c.created_at,
                 cm.role,
                 (SELECT m.body FROM messages m WHERE m.conversation_id = c.id AND m.deleted_at IS NULL ORDER BY m.id DESC LIMIT 1) AS last_message,
@@ -630,6 +632,7 @@ function api_list_conversations(): never
             'title' => $row['title'] ?? $row['direct_title'] ?? '',
             'description' => $row['description'] ?? null,
             'role' => $row['role'],
+            'avatarUrl' => $row['type'] === 'private' ? ($row['direct_avatar_url'] ?? null) : null,
             'createdBy' => (string)$row['created_by'],
             'lastMessage' => $row['last_message'],
             'lastMessageAt' => $row['last_message_at'],

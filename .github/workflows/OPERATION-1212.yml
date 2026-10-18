@@ -55,8 +55,8 @@ jobs:
       - name: Install Android SDK packages and NDK
         shell: pwsh
         env:
-          ANDROID_HOME: C:\\Android\\android-sdk
-          ANDROID_SDK_ROOT: C:\\Android\\android-sdk
+          ANDROID_HOME: C:\Android\android-sdk
+          ANDROID_SDK_ROOT: C:\Android\android-sdk
         run: |
           $sdkmanager = Join-Path $env:ANDROID_HOME "cmdline-tools/16.0/bin/sdkmanager.bat"
           if (-not (Test-Path $sdkmanager)) { throw "Android sdkmanager not found: $sdkmanager" }

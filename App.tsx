@@ -630,7 +630,7 @@ function AppContent() {
   };
 
   const openGroupSettings = async () => {
-    if (!apiToken || !activeRoom || activeRoom.kind !== 'group') return;
+    if (!apiToken || !activeRoom || activeRoom.kind === 'direct') return;
     setBusy(true);
     try {
       const [settings, membersResult] = await Promise.all([
@@ -1269,10 +1269,10 @@ function AppContent() {
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                {modal === 'chat' && activeRoom && activeRoom.kind !== 'direct' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>

@@ -1,0 +1,91 @@
+name: OPERATION-1212
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'App.*'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/**'
+      - 'assets/**'
+      - 'php-api/**'
+      - '.github/workflows/OPERATION-1212.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operation-1212-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apk-release:
+    name: Build apk-release with Gradle
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout main source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Setup Java for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install JavaScript dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Android project with Expo
+        run: npx expo prebuild --platform android --no-install
+        env:
+          CI: '1'
+
+      - name: Install Android SDK packages and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found in $SDK_ROOT/cmdline-tools"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+
+      - name: Build apk-release using Gradle Wrapper
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Verify release APK exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          find android/app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit | grep -q .
+          ls -lh android/app/build/outputs/apk/release/*.apk
+
+      - name: Upload apk-release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VATANMSG-apk-release
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30

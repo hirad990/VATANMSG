@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: operation-1212-release-${{ github.ref }}
+  group: operation-1212-windows-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

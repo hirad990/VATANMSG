@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -668,6 +668,40 @@ function AppContent() {
     } finally { setBusy(false); }
   };
 
+  const deleteCurrentGroup = () => {
+    if (!apiToken || !activeRoom || activeRoom.kind !== 'group') return;
+    const isOwner = groupMembers.some(member => member.id === userId && member.role === 'owner');
+    if (!isOwner) {
+      showAlert(lang === 'fa' ? 'فقط مالک گروه می‌تواند گروه را حذف کند.' : 'Only the group owner can delete this group.');
+      return;
+    }
+    Alert.alert(
+      lang === 'fa' ? 'حذف دائمی گروه؟' : 'Delete group permanently?',
+      lang === 'fa' ? 'گروه، اعضا و پیام‌های آن حذف می‌شوند. این کار قابل بازگشت نیست.' : 'The group, its members, and its messages will be deleted. This cannot be undone.',
+      [
+        { text: t.cancel, style: 'cancel' },
+        { text: lang === 'fa' ? 'حذف گروه' : 'Delete group', style: 'destructive', onPress: () => {
+          void (async () => {
+            setBusy(true);
+            try {
+              await deleteConversation(apiToken, activeRoom.id);
+              setRooms(previous => previous.filter(room => room.id !== activeRoom.id));
+              setActiveRoom(null);
+              setMessages([]);
+              setModal(null);
+              setTab('groups');
+              showAlert(lang === 'fa' ? 'گروه حذف شد.' : 'Group deleted.');
+            } catch (error) {
+              showAlert(error instanceof Error ? error.message : 'Could not delete group.');
+            } finally {
+              setBusy(false);
+            }
+          })();
+        } }
+      ]
+    );
+  };
+
   const saveGroupSettings = async () => {
     if (!apiToken || !activeRoom || !groupSettings) return;
     setBusy(true);
@@ -1321,6 +1355,7 @@ function AppContent() {
                 })}
               </ScrollView>
               {canManageGroup && <Pressable disabled={busy} onPress={() => { void saveGroupSettings(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>}
+              {groupMembers.some(member => member.id === userId && member.role === 'owner') && <Pressable disabled={busy} onPress={deleteCurrentGroup} style={[styles.cancelButton, { borderWidth: 1, borderColor: '#E34E68', marginTop: 8, opacity: busy ? 0.6 : 1 }]}><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'حذف دائمی گروه' : 'Delete group permanently'}</Text></Pressable>}
               <Pressable onPress={() => setModal('chat')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'profile' ? <>
               <Pressable onPress={pickPhoto} style={{ alignItems: 'center', marginBottom: 18 }}>

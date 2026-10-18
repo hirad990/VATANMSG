@@ -1239,7 +1239,6 @@ function AppContent() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && activeRoom && (activeRoom.kind === 'group' || activeRoom.kind === 'channel') && activeRoom.role === 'owner' && <Pressable onPress={() => removeRoom(activeRoom)} onPressIn={tapFeedback} accessibilityLabel={lang === 'fa' ? 'حذف گروه یا کانال' : 'Delete group or channel'}><Ionicons name="trash-outline" size={21} color="#F87171" /></Pressable>}
                 <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>

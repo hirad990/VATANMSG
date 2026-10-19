@@ -86,7 +86,7 @@ function api_create_direct_conversation(): never
     }
 
     $pdo = api_db();
-    $stmt = $pdo->prepare('SELECT u.id, COALESCE(ps.profile_visibility, 'everyone') AS profile_visibility FROM users u LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id WHERE u.username = ? LIMIT 1');
+    $stmt = $pdo->prepare("SELECT u.id, COALESCE(ps.profile_visibility, 'everyone') AS profile_visibility FROM users u LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id WHERE u.username = ? LIMIT 1");
     $stmt->execute([$username]);
     $target = $stmt->fetch();
     if (!$target) {

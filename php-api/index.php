@@ -55,10 +55,11 @@ function api_search_users(): never
     }
     $like = '%' . addcslashes($query, '%_\\\\') . '%';
     $stmt = api_db()->prepare(
-        'SELECT id, username, display_name, avatar_url
-         FROM users
-         WHERE id <> ? AND (username LIKE ? OR display_name LIKE ?)
-         ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, display_name ASC
+        'SELECT u.id, u.username, u.display_name, u.avatar_url
+         FROM users u LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id
+         WHERE u.id <> ? AND COALESCE(ps.profile_visibility, \'everyone\') <> \'nobody\'
+           AND (u.username LIKE ? OR u.display_name LIKE ?)
+         ORDER BY CASE WHEN u.username = ? THEN 0 ELSE 1 END, u.display_name ASC
          LIMIT 30'
     );
     $stmt->execute([$user['id'], $like, $like, $query]);

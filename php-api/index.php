@@ -1071,7 +1071,7 @@ function api_update_conversation_settings(): never
         $pdo->prepare('INSERT INTO conversation_settings (' . implode(', ', $insertColumns) . ') VALUES (' . $placeholders . ') ON DUPLICATE KEY UPDATE ' . $updates)->execute($values);
     }
 
-    $stmt = $pdo->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
+    $stmt = $pdo->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds, s.show_signatures FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     api_response(['success' => true, 'settings' => [
@@ -1081,7 +1081,8 @@ function api_update_conversation_settings(): never
         'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
         'memberCanInvite' => (bool)($row['member_can_invite'] ?? 0),
         'memberCanPin' => (bool)($row['member_can_pin'] ?? 0),
-        'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0)
+        'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0),
+            'showSignatures' => (bool)($row['show_signatures'] ?? 0)
     ]]);
 }
 

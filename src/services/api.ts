@@ -269,6 +269,7 @@ export type VatanGroupSettings = {
   memberCanInvite: boolean;
   memberCanPin: boolean;
   slowModeSeconds: number;
+  showSignatures: boolean;
 };
 
 export type VatanMember = VatanUser & { role: 'owner' | 'admin' | 'member' | 'subscriber' };

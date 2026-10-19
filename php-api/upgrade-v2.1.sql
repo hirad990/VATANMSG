@@ -7,6 +7,9 @@ ALTER TABLE api_tokens
   ADD COLUMN user_agent VARCHAR(255) NULL,
   ADD COLUMN last_seen_at DATETIME NULL;
 
+ALTER TABLE conversation_settings
+  ADD COLUMN show_signatures TINYINT(1) NOT NULL DEFAULT 0;
+
 CREATE TABLE IF NOT EXISTS user_privacy_settings (
   user_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
   phone_visibility ENUM('everyone','contacts','nobody') NOT NULL DEFAULT 'nobody',

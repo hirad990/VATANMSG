@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, getPrivacySettings, updatePrivacySettings, listActiveSessions, deleteAccount, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser, type VatanPrivacySettings, type VatanSession } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, getPrivacySettings, updatePrivacySettings, listActiveSessions, deleteAccount, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, resolveIdentifier, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser, type VatanPrivacySettings, type VatanSession } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -783,6 +783,42 @@ function AppContent() {
     });
   };
 
+  const openIdentifier = async (rawIdentifier: string) => {
+    if (!apiToken) { setModal('login'); return; }
+    const identifier = rawIdentifier.replace(/^@/, '').trim();
+    if (!/^[A-Za-z0-9_]{3,32}$/.test(identifier)) return;
+    setBusy(true);
+    try {
+      const result = await resolveIdentifier(apiToken, identifier);
+      const users = result.users ?? [];
+      const channels = result.channels ?? [];
+      const openUser = (target: VatanUser) => { void openUserDirect(target.username); };
+      const openChannel = (target: { id: string; kind: 'channel'; title: string; description: string | null; avatarUrl?: string | null }) => {
+        void (async () => {
+          try {
+            await joinConversation(apiToken, target.id);
+            const room: Room = { id: target.id, title: target.title, subtitle: target.description || (lang === 'fa' ? 'کانال' : 'Channel'), icon: 'megaphone', kind: 'channel', avatarUrl: target.avatarUrl ?? null };
+            setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
+            setTab('channels');
+            openRoom(room);
+          } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not open channel.'); }
+        })();
+      };
+      if (users.length && channels.length) {
+        Alert.alert(lang === 'fa' ? 'این شناسه برای دو مورد پیدا شد' : 'Two matches found',
+          lang === 'fa' ? 'می‌خواهی وارد حساب کاربری شوی یا کانال؟' : 'Open the user or the channel?',
+          [
+            { text: lang === 'fa' ? 'کاربر @' + users[0].username : 'User @' + users[0].username, onPress: () => openUser(users[0]) },
+            { text: lang === 'fa' ? 'کانال ' + channels[0].title : 'Channel ' + channels[0].title, onPress: () => openChannel(channels[0]) },
+            { text: lang === 'fa' ? 'انصراف' : 'Cancel', style: 'cancel' }
+          ]);
+      } else if (users.length) openUser(users[0]);
+      else if (channels.length) openChannel(channels[0]);
+      else showAlert(lang === 'fa' ? 'هیچ کاربر یا کانالی با این شناسه پیدا نشد.' : 'No user or channel matched this ID.');
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not resolve identifier.'); }
+    finally { setBusy(false); }
+  };
+
   const openUserDirect = async (targetUsername: string) => {
     if (!apiToken || !targetUsername || targetUsername.toLowerCase() === username.toLowerCase()) return;
     setBusy(true);
@@ -1362,7 +1398,7 @@ function AppContent() {
               <ScrollView style={{ maxHeight: '65%' }} keyboardShouldPersistTaps="handled">
                 {messageSearchResults.map(message => <Pressable key={message.id} onPress={() => { setModal('chat'); }} style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 4 }}>
                   <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}><Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={13} color="#2997FF" />}</View>
-                  <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                  <Text style={{ color: c.text, fontSize: 13 }}>{message.body.split(/(@[A-Za-z0-9_]{3,32}|#[A-Za-z0-9_\\u0600-\\u06FF]{1,64})/g).map((part, index) => part.startsWith('@') ? <Text key={index} onPress={() => { void openIdentifier(part); }} style={{ color: '#2997FF', fontWeight: '800' }}>{part}</Text> : part.startsWith('#') ? <Text key={index} style={{ color: '#20C9C3', fontWeight: '800' }}>{part}</Text> : part)}</Text>
                   <Text style={{ color: c.muted, fontSize: 10 }}>{message.createdAt}</Text>
                 </Pressable>)}
                 {messageSearchResults.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : (lang === 'fa' ? 'نتیجه‌ای پیدا نشد.' : 'No results found.')}</Text>}

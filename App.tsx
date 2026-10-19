@@ -1127,7 +1127,7 @@ function AppContent() {
       <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
         {foundUsers.map(person => <Pressable key={person.id} onPress={() => { void startDirectChat(person); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
           <Avatar icon="person" color={c.primary} uri={person.avatarUrl} />
-          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></View>
+          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text>{person.username.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={14} color="#2997FF" />}</View><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></View>
           <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} />
         </Pressable>)}
         {foundUsers.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : t.noContacts}</Text>}
@@ -1148,7 +1148,7 @@ function AppContent() {
           <Pressable onPress={() => openSavedMessage(message)} style={{ gap: 5 }}>
             <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 7 }}><Ionicons name="bookmark" size={14} color={c.primary} /><Text style={{ color: c.primary, fontSize: 11, fontWeight: '900', flex: 1 }}>{rooms.find(room => room.id === message.conversationId)?.title ?? (lang === 'fa' ? 'گفت‌وگوی حذف‌شده' : 'Unavailable conversation')}</Text><Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={15} color={c.muted} /></View>
             <Text numberOfLines={4} style={{ color: c.text, fontSize: 13, lineHeight: 20, textAlign: isRTL ? 'right' : 'left' }}>{message.body || (message.attachments?.length ? message.attachments.map(file => file.name).join(', ') : (lang === 'fa' ? 'پیام رسانه‌ای' : 'Media message'))}</Text>
-            <Text style={{ color: c.muted, fontSize: 9, textAlign: isRTL ? 'right' : 'left' }}>{message.displayName} · {new Date(message.createdAt).toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-US')}</Text>
+            <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}><Text style={{ color: c.muted, fontSize: 9 }}>{message.displayName} · {new Date(message.createdAt).toLocaleString(lang === 'fa' ? 'fa-IR' : 'en-US')}</Text>{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</View>
           </Pressable>
           <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', justifyContent: 'flex-end' }}><Pressable onPress={() => toggleSavedMessage(message)} style={[styles.smallAction, { backgroundColor: c.soft }]}><Ionicons name="bookmark-outline" size={14} color="#E34E68" /><Text style={{ color: '#E34E68', fontSize: 10, fontWeight: '800' }}>{lang === 'fa' ? 'حذف از ذخیره‌ها' : 'Remove saved'}</Text></Pressable></View>
         </View>)}
@@ -1355,7 +1355,7 @@ function AppContent() {
               </View>
               <ScrollView style={{ maxHeight: '65%' }} keyboardShouldPersistTaps="handled">
                 {messageSearchResults.map(message => <Pressable key={message.id} onPress={() => { setModal('chat'); }} style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 4 }}>
-                  <Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>
+                  <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}><Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={13} color="#2997FF" />}</View>
                   <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                   <Text style={{ color: c.muted, fontSize: 10 }}>{message.createdAt}</Text>
                 </Pressable>)}

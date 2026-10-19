@@ -670,7 +670,7 @@ function api_delete_account(): never
             $other->execute([$conversationId, $user['id']]);
             $newOwner = $other->fetchColumn();
             if ($newOwner) {
-                $pdo->prepare("UPDATE conversation_members SET role = 'admin' WHERE conversation_id = ? AND user_id = ?")->execute([$conversationId, $newOwner]);
+                $pdo->prepare("UPDATE conversation_members SET role = 'owner' WHERE conversation_id = ? AND user_id = ?")->execute([$conversationId, $newOwner]);
                 $pdo->prepare("UPDATE conversations SET created_by = ? WHERE id = ?")->execute([$newOwner, $conversationId]);
             } else {
                 $pdo->prepare('DELETE FROM conversations WHERE id = ?')->execute([$conversationId]);

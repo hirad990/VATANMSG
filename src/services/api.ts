@@ -320,6 +320,28 @@ export async function markMessagesRead(token: string, conversationId: string, la
   });
 }
 
+export type VatanPrivacySettings = { phone: 'everyone' | 'contacts' | 'nobody'; profile: 'everyone' | 'contacts' | 'nobody'; lastSeen: 'everyone' | 'contacts' | 'nobody'; invites: 'everyone' | 'contacts' | 'nobody' };
+export type VatanSession = { id: string; ipAddress: string | null; userAgent: string | null; createdAt: string; lastSeenAt: string; expiresAt: string; isCurrent: boolean; location: string | null };
+
+export async function getPrivacySettings(token: string): Promise<VatanPrivacySettings> {
+  const result = await request<{ settings: VatanPrivacySettings }>('/auth/privacy', token);
+  return result.settings;
+}
+
+export async function updatePrivacySettings(token: string, settings: VatanPrivacySettings): Promise<VatanPrivacySettings> {
+  const result = await request<{ settings: VatanPrivacySettings }>('/auth/privacy', token, { method: 'PATCH', body: JSON.stringify(settings) });
+  return result.settings;
+}
+
+export async function listActiveSessions(token: string): Promise<VatanSession[]> {
+  const result = await request<{ sessions: VatanSession[] }>('/auth/sessions', token);
+  return result.sessions ?? [];
+}
+
+export async function deleteAccount(token: string, password: string): Promise<void> {
+  await request('/auth/delete-account', token, { method: 'POST', body: JSON.stringify({ password }) });
+}
+
 export async function logoutAllSessions(token: string): Promise<void> {
   await request('/auth/logout-all', token, { method: 'POST', body: '{}' });
 }

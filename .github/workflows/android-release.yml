@@ -13,18 +13,17 @@ on:
       - 'src/**'
       - 'assets/**'
       - 'php-api/**'
-      - '.github/workflows/android-release.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: vatanmsg-2.1.0-windows-release-v2-${{ github.ref }}
+  group: vatanmsg-2.1.0-windows-release-v3-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   apk-release:
-    name: Build release APK with gradlew.bat
+    name: Build signed release APK with gradlew.bat
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
@@ -61,22 +60,82 @@ jobs:
         env:
           CI: '1'
 
-      - name: Build release APK using gradlew.bat
+      - name: Configure release signing
+        shell: pwsh
+        env:
+          VATAN_KEYSTORE_BASE64: ${{ secrets.VATAN_KEYSTORE_BASE64 }}
+          VATAN_STORE_PASSWORD: ${{ secrets.VATAN_STORE_PASSWORD }}
+          VATAN_KEY_ALIAS: ${{ secrets.VATAN_KEY_ALIAS }}
+          VATAN_KEY_PASSWORD: ${{ secrets.VATAN_KEY_PASSWORD }}
+        run: |
+          $required = @('VATAN_KEYSTORE_BASE64','VATAN_STORE_PASSWORD','VATAN_KEY_ALIAS','VATAN_KEY_PASSWORD')
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "Env:$name" -ErrorAction SilentlyContinue).Value)) {
+              throw "Missing GitHub Actions secret: $name. Add it in Settings > Secrets and variables > Actions."
+            }
+          }
+          $keystorePath = Join-Path $PWD 'android/app/vatan-release.keystore'
+          [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:VATAN_KEYSTORE_BASE64))
+          $gradleFile = 'android/app/build.gradle'
+          $gradle = Get-Content $gradleFile -Raw
+          $releaseConfig = @'
+          signingConfigs {
+              release {
+                  storeFile file("vatan-release.keystore")
+                  storePassword System.getenv("VATAN_STORE_PASSWORD")
+                  keyAlias System.getenv("VATAN_KEY_ALIAS")
+                  keyPassword System.getenv("VATAN_KEY_PASSWORD")
+              }
+          }
+
+          '@
+          if ($gradle -notmatch 'signingConfigs\s*\{\s*release\s*\{') {
+            $gradle = $gradle -replace '(?m)^buildTypes\s*\{', ($releaseConfig + 'buildTypes {')
+          }
+          $needle = 'signingConfig signingConfigs.debug'
+          $first = $gradle.IndexOf($needle)
+          if ($first -lt 0) { throw 'Could not find the generated debug signing config in android/app/build.gradle.' }
+          $second = $gradle.IndexOf($needle, $first + $needle.Length)
+          if ($second -ge 0) {
+            $gradle = $gradle.Remove($second, $needle.Length).Insert($second, 'signingConfig signingConfigs.release')
+          } else {
+            # Expo templates may only have one occurrence; ensure release build type is explicitly signed.
+            $releaseStart = $gradle.IndexOf('release {', $gradle.IndexOf('buildTypes'))
+            if ($releaseStart -lt 0) { throw 'Could not find the release build type.' }
+            $signingAt = $gradle.IndexOf('signingConfig', $releaseStart)
+            if ($signingAt -ge 0) {
+              $lineEnd = $gradle.IndexOf("`n", $signingAt)
+              if ($lineEnd -lt 0) { throw 'Could not locate release signing line.' }
+              $gradle = $gradle.Remove($signingAt, $lineEnd - $signingAt).Insert($signingAt, 'signingConfig signingConfigs.release')
+            } else {
+              $close = $gradle.IndexOf('}', $releaseStart)
+              if ($close -lt 0) { throw 'Could not patch release build type.' }
+              $gradle = $gradle.Insert($close, "`n        signingConfig signingConfigs.release`n    ")
+            }
+          }
+          Set-Content -Path $gradleFile -Value $gradle -NoNewline
+          Write-Host 'Release signing configured.'
+
+      - name: Build signed release APK using gradlew.bat
         shell: pwsh
         working-directory: android
         run: .\gradlew.bat --no-daemon --stacktrace assembleRelease
 
-      - name: Verify release APK exists
+      - name: Verify APK is signed with release key
         shell: pwsh
         run: |
           $apk = Get-ChildItem "android/app/build/outputs/apk/release" -Filter "*.apk" -File | Select-Object -First 1
           if (-not $apk) { throw "Gradle completed without producing a release APK." }
-          Get-ChildItem "android/app/build/outputs/apk/release" -Filter "*.apk" -File | Format-Table Name, Length
+          $apksigner = Get-ChildItem "$env:ANDROID_HOME/build-tools" -Filter "apksigner.bat" -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $apksigner) { throw "apksigner.bat not found." }
+          & $apksigner.FullName verify --print-certs $apk.FullName
+          if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed." }
+          Get-Item $apk.FullName | Format-Table Name, Length
 
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VATANMSG-2.1.0-apk-release
+          name: VATANMSG-2.1.0-apk-release-signed
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30

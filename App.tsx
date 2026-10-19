@@ -731,7 +731,8 @@ function AppContent() {
         memberCanSend: groupSettings.memberCanSend,
         memberCanInvite: groupSettings.memberCanInvite,
         memberCanPin: groupSettings.memberCanPin,
-        slowModeSeconds: groupSettings.slowModeSeconds
+        slowModeSeconds: groupSettings.slowModeSeconds,
+        showSignatures: groupSettings.showSignatures
       });
       setGroupSettings(updated);
       const nextRoom = { ...activeRoom, title: updated.title, subtitle: updated.description || activeRoom.subtitle };
@@ -815,7 +816,9 @@ function AppContent() {
         .then(([settings, members]) => { setGroupSettings(settings); setGroupMembers(members.members); })
         .catch(() => undefined);
     } else if (room.kind === 'channel') {
-      void getConversationMembers(apiToken, room.id).then(members => setGroupMembers(members.members)).catch(() => undefined);
+      void Promise.all([getConversationSettings(apiToken, room.id), getConversationMembers(apiToken, room.id)])
+        .then(([settings, members]) => { setGroupSettings(settings); setGroupMembers(members.members); })
+        .catch(() => undefined);
     }
   };
 
@@ -1314,7 +1317,7 @@ function AppContent() {
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { setChannelSignatures(previous => ({ ...previous, [activeRoom.id]: !previous[activeRoom.id] })); showAlert(lang === 'fa' ? 'نمایش امضای کانال برای همین دستگاه تغییر کرد؛ برای همگام‌سازی بین دستگاه‌ها تنظیم سرور لازم است.' : 'Channel signatures changed on this device; server support is required to sync across devices.'); }}><Ionicons name={channelSignatures[activeRoom.id] ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { if (!apiToken || !activeRoom || !groupSettings) return; setBusy(true); void updateConversationSettings(apiToken, activeRoom.id, { showSignatures: !groupSettings.showSignatures }).then(settings => { setGroupSettings(settings); showAlert(lang === 'fa' ? 'تنظیم امضای کانال ذخیره شد.' : 'Channel signature setting saved.'); }).catch(error => showAlert(error instanceof Error ? error.message : 'Could not save channel setting.')).finally(() => setBusy(false)); }}><Ionicons name={groupSettings?.showSignatures ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => modal === 'chat' ? closeActiveChat() : setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
@@ -1442,9 +1445,9 @@ function AppContent() {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    <Pressable disabled={mine || activeRoom?.kind === 'channel'} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={activeRoom?.kind === 'channel' && !channelSignatures[activeRoom.id] ? null : message.avatarUrl ?? null} /></Pressable>
+                    <Pressable disabled={mine || activeRoom?.kind === 'channel'} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : message.avatarUrl ?? null} /></Pressable>
                     <View style={{ maxWidth: '88%' }}>
-                      <Pressable disabled={activeRoom?.kind === 'channel' || mine} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' && !channelSignatures[activeRoom.id] ? (lang === 'fa' ? 'کانال وطن' : 'Channel') : (message.displayName || message.username)}{(activeRoom?.kind !== 'channel' || channelSignatures[activeRoom.id]) && message.username ? ' · @' + message.username : ''}{(message.senderId === userId || message.username?.toLowerCase() === 'hirad990') && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <Pressable disabled={activeRoom?.kind === 'channel' || mine} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? (lang === 'fa' ? 'کانال وطن' : 'Channel') : (message.displayName || message.username)}{(activeRoom?.kind !== 'channel' || groupSettings?.showSignatures) && message.username ? ' · @' + message.username : ''}{(message.senderId === userId || message.username?.toLowerCase() === 'hirad990') && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
                       <Pressable onLongPress={() => { setSelectedActionMessage(message); setModal('messageActions'); }} delayLongPress={280} style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>

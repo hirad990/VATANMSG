@@ -793,7 +793,7 @@ function AppContent() {
       const users = result.users ?? [];
       const channels = result.channels ?? [];
       const openUser = (target: VatanUser) => { void openUserDirect(target.username); };
-      const openChannel = (target: { id: string; kind: 'channel'; title: string; description: string | null; avatarUrl?: string | null }) => {
+      const openChannel = (target: { id: string; title: string; description: string | null; avatarUrl?: string | null }) => {
         void (async () => {
           try {
             await joinConversation(apiToken, target.id);

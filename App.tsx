@@ -708,9 +708,8 @@ function AppContent() {
     try {
       await leaveConversation(apiToken, activeRoom.id);
       setRooms(previous => previous.filter(room => room.id !== activeRoom.id));
-      setActiveRoom(null);
-      setModal(null);
       setTab('groups');
+      closeActiveChat();
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Could not leave group.');
     } finally { setBusy(false); }
@@ -1442,9 +1441,9 @@ function AppContent() {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    <Pressable disabled={mine || activeRoom?.kind === 'channel'} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : message.avatarUrl ?? null} /></Pressable>
+                    <Pressable disabled={mine || (activeRoom?.kind === 'channel' && !groupSettings?.showSignatures)} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : message.avatarUrl ?? null} /></Pressable>
                     <View style={{ maxWidth: '88%' }}>
-                      <Pressable disabled={activeRoom?.kind === 'channel' || mine} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? (lang === 'fa' ? 'کانال وطن' : 'Channel') : (message.displayName || message.username)}{(activeRoom?.kind !== 'channel' || groupSettings?.showSignatures) && message.username ? ' · @' + message.username : ''}{(message.senderId === userId || message.username?.toLowerCase() === 'hirad990') && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <Pressable disabled={mine || (activeRoom?.kind === 'channel' && !groupSettings?.showSignatures)} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? (lang === 'fa' ? 'کانال وطن' : 'Channel') : (message.displayName || message.username)}{(activeRoom?.kind !== 'channel' || groupSettings?.showSignatures) && message.username ? ' · @' + message.username : ''}{(message.senderId === userId || message.username?.toLowerCase() === 'hirad990') && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
                       <Pressable onLongPress={() => { setSelectedActionMessage(message); setModal('messageActions'); }} delayLongPress={280} style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>

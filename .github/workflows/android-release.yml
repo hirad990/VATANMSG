@@ -42,10 +42,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android SDK and required packages
         uses: android-actions/setup-android@v3
         with:
-          packages: ''
+          packages: 'platform-tools,platforms;android-36,build-tools;36.0.0,ndk;27.1.12297006'
 
       - name: Install JavaScript dependencies
         shell: pwsh
@@ -56,12 +56,6 @@ jobs:
         run: npx expo prebuild --platform android --no-install
         env:
           CI: '1'
-
-      - name: Install Android SDK packages and NDK
-        shell: pwsh
-        run: |
-          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
-          if ($LASTEXITCODE -ne 0) { throw "Android SDK package installation failed with exit code $LASTEXITCODE" }
 
       - name: Build release APK using gradlew.bat
         shell: pwsh

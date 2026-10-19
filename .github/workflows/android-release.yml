@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: vatanmsg-2.1.0-windows-release-${{ github.ref }}
+  group: vatanmsg-2.1.0-windows-release-v2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

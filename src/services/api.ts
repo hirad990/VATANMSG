@@ -12,6 +12,7 @@ export type VatanConversation = {
   kind: 'group' | 'channel' | 'direct';
   title: string;
   description: string | null;
+  channelId?: string | null;
   role?: 'owner' | 'admin' | 'member' | 'subscriber';
   avatarUrl?: string | null;
   lastMessage?: string | null;
@@ -86,6 +87,7 @@ function normalizeConversation(value: any): VatanConversation {
     kind: value.kind === 'direct' || value.type === 'private' ? 'direct' : (value.kind ?? value.type ?? 'group'),
     title: String(value.title ?? ''),
     description: value.description ?? null,
+    channelId: value.channelId ?? value.channel_id ?? null,
     role: value.role,
     avatarUrl: value.avatarUrl ?? value.otherUser?.avatarUrl ?? value.other_user?.avatar_url ?? null,
     lastMessage: value.lastMessage ?? value.last_message ?? null,
@@ -163,10 +165,10 @@ export async function createGroup(token: string, title: string, description?: st
   return { ...result, conversation: normalizeConversation(result.conversation) };
 }
 
-export async function createChannel(token: string, title: string, description?: string) {
+export async function createChannel(token: string, title: string, description?: string, channelId?: string) {
   const result = await request<any>('/conversations', token, {
     method: 'POST',
-    body: JSON.stringify({ type: 'channel', title, description })
+    body: JSON.stringify({ type: 'channel', title, description, channel_id: channelId || '' })
   });
   return { ...result, conversation: normalizeConversation(result.conversation) };
 }
@@ -189,6 +191,23 @@ export async function sendMessage(token: string, conversationId: string, body: s
     })
   });
   return { ...result, message: normalizeMessage(result.message) };
+}
+
+export type VatanIdentifierResolution = {
+  users: VatanUser[];
+  channels: VatanConversation[];
+};
+
+export async function resolveIdentifier(token: string, query: string): Promise<VatanIdentifierResolution> {
+  const result = await request<any>(`/resolve?q=${encodeURIComponent(query.replace(/^@/, ''))}`, token);
+  return {
+    users: (result.users ?? []).map((user: any) => ({
+      id: String(user.id), username: String(user.username ?? ''),
+      displayName: String(user.displayName ?? user.display_name ?? ''),
+      avatarUrl: user.avatarUrl ?? user.avatar_url ?? null
+    })),
+    channels: (result.channels ?? []).map(normalizeConversation)
+  };
 }
 
 export async function searchUsers(token: string, query: string): Promise<{ users: VatanUser[] }> {
@@ -262,6 +281,7 @@ export type VatanGroupSettings = {
   id: string;
   title: string;
   description: string | null;
+  channelId?: string | null;
   avatarUrl: string | null;
   themeKey: string;
   themeMode: 'light' | 'dark' | 'system';

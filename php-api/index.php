@@ -365,6 +365,7 @@ function api_user(): array
     if (!$user) {
         api_response(['error' => 'Invalid or expired token'], 401);
     }
+    api_db()->prepare('UPDATE api_tokens SET last_seen_at = UTC_TIMESTAMP(), ip_address = COALESCE(ip_address, ?), user_agent = COALESCE(user_agent, ?) WHERE token_hash = ?')->execute([substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255), hash('sha256', $token)]);
     return $user;
 }
 
@@ -386,10 +387,10 @@ function api_issue_auth_token(int $userId, array $config): string
     $token = bin2hex(random_bytes(32));
     $days = max(1, min(365, (int)($config['token_expiry_days'] ?? 90)));
     $stmt = api_db()->prepare(
-        'INSERT INTO api_tokens (user_id, token_hash, expires_at)
-         VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY))'
+        'INSERT INTO api_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
+         VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY), ?, ?, UTC_TIMESTAMP())'
     );
-    $stmt->execute([$userId, hash('sha256', $token)]);
+    $stmt->execute([$userId, hash('sha256', $token), substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255)]);
     return $token;
 }
 
@@ -584,6 +585,114 @@ function api_update_profile(): never
     $stmt = api_db()->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE id = ?');
     $stmt->execute([$user['id']]);
     api_response(['user' => api_public_user($stmt->fetch())]);
+}
+
+function api_list_sessions(): never
+{
+    api_method('GET');
+    $user = api_user();
+    $currentHash = hash('sha256', (string)api_bearer());
+    $stmt = api_db()->prepare('SELECT id, ip_address, user_agent, created_at, last_seen_at, expires_at, token_hash FROM api_tokens WHERE user_id = ? AND expires_at > UTC_TIMESTAMP() ORDER BY COALESCE(last_seen_at, created_at) DESC');
+    $stmt->execute([$user['id']]);
+    $sessions = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $sessions[] = [
+            'id' => (string)$row['id'],
+            'ipAddress' => $row['ip_address'] ?? null,
+            'userAgent' => $row['user_agent'] ?? null,
+            'createdAt' => $row['created_at'],
+            'lastSeenAt' => $row['last_seen_at'] ?? $row['created_at'],
+            'expiresAt' => $row['expires_at'],
+            'isCurrent' => hash_equals((string)$row['token_hash'], $currentHash),
+            'location' => null
+        ];
+    }
+    api_response(['sessions' => $sessions]);
+}
+
+function api_get_privacy_settings(): never
+{
+    api_method('GET');
+    $user = api_user();
+    $pdo = api_db();
+    $pdo->prepare('INSERT IGNORE INTO user_privacy_settings (user_id) VALUES (?)')->execute([$user['id']]);
+    $stmt = $pdo->prepare('SELECT phone_visibility, profile_visibility, last_seen_visibility, group_invite_visibility FROM user_privacy_settings WHERE user_id = ? LIMIT 1');
+    $stmt->execute([$user['id']]);
+    $row = $stmt->fetch();
+    api_response(['settings' => [
+        'phone' => $row['phone_visibility'],
+        'profile' => $row['profile_visibility'],
+        'lastSeen' => $row['last_seen_visibility'],
+        'invites' => $row['group_invite_visibility']
+    ]]);
+}
+
+function api_update_privacy_settings(): never
+{
+    api_method('PATCH', 'POST');
+    $user = api_user();
+    $data = api_input();
+    $allowed = ['everyone', 'contacts', 'nobody'];
+    $values = [];
+    foreach (['phone', 'profile', 'lastSeen', 'invites'] as $key) {
+        $value = (string)($data[$key] ?? 'nobody');
+        if (!in_array($value, $allowed, true)) api_response(['error' => 'Invalid privacy option'], 422);
+        $values[$key] = $value;
+    }
+    $pdo = api_db();
+    $stmt = $pdo->prepare('INSERT INTO user_privacy_settings (user_id, phone_visibility, profile_visibility, last_seen_visibility, group_invite_visibility) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE phone_visibility = VALUES(phone_visibility), profile_visibility = VALUES(profile_visibility), last_seen_visibility = VALUES(last_seen_visibility), group_invite_visibility = VALUES(group_invite_visibility)');
+    $stmt->execute([$user['id'], $values['phone'], $values['profile'], $values['lastSeen'], $values['invites']]);
+    api_response(['success' => true, 'settings' => $values]);
+}
+
+function api_delete_account(): never
+{
+    api_method('POST', 'DELETE');
+    $user = api_user();
+    $data = api_input();
+    $password = (string)($data['password'] ?? '');
+    $stmt = api_db()->prepare('SELECT password_hash FROM users WHERE id = ? LIMIT 1');
+    $stmt->execute([$user['id']]);
+    $hash = (string)($stmt->fetchColumn() ?: '');
+    if ($hash === '' || !password_verify($password, $hash)) api_response(['error' => 'Password confirmation failed'], 403);
+
+    $pdo = api_db();
+    $pdo->beginTransaction();
+    try {
+        $owned = $pdo->prepare("SELECT id FROM conversations WHERE id IN (SELECT conversation_id FROM conversation_members WHERE user_id = ? AND role = 'owner')");
+        $owned->execute([$user['id']]);
+        foreach ($owned->fetchAll(PDO::FETCH_COLUMN) as $conversationId) {
+            $other = $pdo->prepare("SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id <> ? ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'member' THEN 1 ELSE 2 END, joined_at ASC LIMIT 1");
+            $other->execute([$conversationId, $user['id']]);
+            $newOwner = $other->fetchColumn();
+            if ($newOwner) {
+                $pdo->prepare("UPDATE conversation_members SET role = 'admin' WHERE conversation_id = ? AND user_id = ?")->execute([$conversationId, $newOwner]);
+                $pdo->prepare("UPDATE conversations SET created_by = ? WHERE id = ?")->execute([$newOwner, $conversationId]);
+            } else {
+                $pdo->prepare('DELETE FROM conversations WHERE id = ?')->execute([$conversationId]);
+            }
+        }
+
+        $created = $pdo->prepare('SELECT id FROM conversations WHERE created_by = ?');
+        $created->execute([$user['id']]);
+        foreach ($created->fetchAll(PDO::FETCH_COLUMN) as $conversationId) {
+            $other = $pdo->prepare('SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id <> ? ORDER BY joined_at ASC LIMIT 1');
+            $other->execute([$conversationId, $user['id']]);
+            $replacement = $other->fetchColumn();
+            if ($replacement) $pdo->prepare('UPDATE conversations SET created_by = ? WHERE id = ?')->execute([$replacement, $conversationId]);
+            else $pdo->prepare('DELETE FROM conversations WHERE id = ?')->execute([$conversationId]);
+        }
+
+        $pdo->prepare('DELETE FROM messages WHERE sender_id = ?')->execute([$user['id']]);
+        $pdo->prepare('DELETE FROM conversation_members WHERE user_id = ?')->execute([$user['id']]);
+        $pdo->prepare('DELETE FROM api_tokens WHERE user_id = ?')->execute([$user['id']]);
+        $pdo->prepare('DELETE FROM users WHERE id = ?')->execute([$user['id']]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    api_response(['success' => true, 'accountDeleted' => true]);
 }
 
 function api_logout(): never
@@ -1336,6 +1445,16 @@ try {
             break;
         case 'auth/logout-all':
             api_logout_all_sessions();
+            break;
+        case 'auth/sessions':
+            api_list_sessions();
+            break;
+        case 'auth/privacy':
+            if ($method === 'PATCH' || $method === 'POST') api_update_privacy_settings();
+            else api_get_privacy_settings();
+            break;
+        case 'auth/delete-account':
+            api_delete_account();
             break;
         case 'push/register':
             api_register_push_device();

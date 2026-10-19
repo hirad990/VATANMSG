@@ -8,8 +8,8 @@ This is the PHP 8.2 + MariaDB backend for the React Native app. It does not requ
 2. Upload the contents of this folder into that directory (not the folder itself).
 3. Copy `config.example.php` to `config.php` on the host.
 4. Edit only the host's `config.php` and enter the cPanel database name, database user, and password. Do not commit the real config file.
-5. In phpMyAdmin, select the target database. For a fresh database, run `schema.sql`, then run `upgrade-v2.sql`.
-6. If using the earlier prototype database, run only the missing statements from `upgrade-existing.sql` first, then run `upgrade-v2.sql`. Back up the database and skip any ALTER/CREATE INDEX statement whose column/index already exists; this migration is intended to be run once.
+5. In phpMyAdmin, select the target database. For a fresh database, run `schema.sql`, then run `upgrade-v2.sql`, then `upgrade-v2.1.sql`.
+6. If using the earlier prototype database, run only the missing statements from `upgrade-existing.sql` first, then run `upgrade-v2.sql`, then `upgrade-v2.1.sql`. Back up the database and skip any ALTER/CREATE INDEX statement whose column/index already exists; each migration is intended to be run once.
 7. Verify `https://binercraft.ir/api/health` returns JSON.
 
 PHP extensions required: `pdo_mysql`, `mbstring`. HTTPS must be enabled.
@@ -39,6 +39,9 @@ The mobile app currently calls `https://binercraft.ir/api` directly.
 - `PATCH /conversations/member-role` — owner promotes/demotes a member
 - `POST /conversations/transfer-ownership` — transfer group ownership
 - `POST /auth/logout-all` — revoke all bearer-token sessions for the signed-in account
+- `GET /auth/sessions` — list active sessions with IP address, user agent, last activity, and expiry (requires `upgrade-v2.1.sql`; location is not geolocated)
+- `GET /auth/privacy` / `PATCH /auth/privacy` — read or save account privacy preferences (requires `upgrade-v2.1.sql`)
+- `POST /auth/delete-account` — permanently delete the account after current-password confirmation
 - `GET /messages?conversation_id=123&limit=50&before_id=500` — read recent messages or paginate older messages
 - `POST /messages` — send `{ "conversation_id": 123, "body": "..." }`
 - `PATCH /messages/edit` — edit your own message with `{ "message_id": 123, "body": "..." }`
@@ -56,7 +59,7 @@ Protected routes require `Authorization: Bearer <token>`.
 
 - Demo login is for development only and does not verify identity. Set `demo_login_enabled` to `false` before a public launch until a real authentication flow is configured.
 - User search, private conversation creation, membership management, message editing/deletion, and paginated message reads are available in this API, but the mobile screens still need to expose all of them.
-- This shared-hosting version still uses REST polling, not WebSocket push. Media upload/download, reactions, message search, read receipts and Expo push dispatch are implemented in the API; the app exposes the related chat controls. Push notifications require an EAS project ID under `expo.extra.eas.projectId` in `app.json`, a native development/production build, notification permission, and cURL/outbound HTTPS on the PHP host. Until that project ID is configured and a native build is installed, push-token registration is intentionally skipped. Delivery receipts currently become available when a recipient opens the conversation; precise background delivery status depends on push-provider receipts and is not guaranteed. Blocking/reporting and end-to-end encryption are not implemented.
+- This shared-hosting version still uses REST polling, not WebSocket push. Media upload/download, reactions, message search, read receipts and Expo push dispatch are implemented in the API; the app exposes the related chat controls. Push notifications require an EAS project ID under `expo.extra.eas.projectId` in `app.json`, a native development/production build, notification permission, and cURL/outbound HTTPS on the PHP host. Until that project ID is configured and a native build is installed, push-token registration is intentionally skipped. Delivery receipts currently become available when a recipient opens the conversation; precise background delivery status depends on push-provider receipts and is not guaranteed. Blocking/reporting and end-to-end encryption are not implemented. Privacy preferences are stored server-side, but full enforcement for phone visibility/contact-only visibility requires a contacts/phone verification system; the sessions screen reports IP and device details but does not infer a physical location.
 - Never commit real passwords or bearer tokens. Restrict database user privileges and keep backups.
 
 

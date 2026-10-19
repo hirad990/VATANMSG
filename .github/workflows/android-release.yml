@@ -6,6 +6,7 @@ on:
     branches:
       - '2.1.0'
     paths:
+      - '.github/workflows/android-release.yml'
       - 'App.*'
       - 'app.json'
       - 'package.json'
@@ -18,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: vatanmsg-2.1.0-windows-release-v3-${{ github.ref }}
+  group: vatanmsg-2.1.0-windows-release-v4-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -78,40 +79,28 @@ jobs:
           [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:VATAN_KEYSTORE_BASE64))
           $gradleFile = 'android/app/build.gradle'
           $gradle = Get-Content $gradleFile -Raw
-          $releaseConfig = @'
-          signingConfigs {
-              release {
-                  storeFile file("vatan-release.keystore")
-                  storePassword System.getenv("VATAN_STORE_PASSWORD")
-                  keyAlias System.getenv("VATAN_KEY_ALIAS")
-                  keyPassword System.getenv("VATAN_KEY_PASSWORD")
-              }
+
+          # Insert the release signing config INSIDE the existing signingConfigs container.
+          if ($gradle -notmatch 'vatan-release\.keystore') {
+            $pattern = '(?s)(signingConfigs\s*\{\s*debug\s*\{.*?\r?\n\s*\})(\s*\})'
+            $replacement = '$1' + "`r`n    release {`r`n        storeFile file(''vatan-release.keystore'')`r`n        storePassword System.getenv(''VATAN_STORE_PASSWORD'')`r`n        keyAlias System.getenv(''VATAN_KEY_ALIAS'')`r`n        keyPassword System.getenv(''VATAN_KEY_PASSWORD'')`r`n    }" + '$2'
+            $updated = [regex]::Replace($gradle, $pattern, $replacement, 1)
+            if ($updated -eq $gradle) { throw 'Could not insert release config inside the existing signingConfigs block.' }
+            $gradle = $updated
           }
 
-          '@
-          if ($gradle -notmatch 'signingConfigs\s*\{\s*release\s*\{') {
-            $gradle = $gradle -replace '(?m)^buildTypes\s*\{', ($releaseConfig + 'buildTypes {')
-          }
+          # Find the release build type only after the buildTypes block, then point it at the release key.
+          $buildTypesAt = $gradle.IndexOf('buildTypes')
+          $releaseAt = $gradle.IndexOf('release {', $buildTypesAt)
+          if ($buildTypesAt -lt 0 -or $releaseAt -lt 0) { throw 'Could not locate the release build type.' }
           $needle = 'signingConfig signingConfigs.debug'
-          $first = $gradle.IndexOf($needle)
-          if ($first -lt 0) { throw 'Could not find the generated debug signing config in android/app/build.gradle.' }
-          $second = $gradle.IndexOf($needle, $first + $needle.Length)
-          if ($second -ge 0) {
-            $gradle = $gradle.Remove($second, $needle.Length).Insert($second, 'signingConfig signingConfigs.release')
-          } else {
-            # Expo templates may only have one occurrence; ensure release build type is explicitly signed.
-            $releaseStart = $gradle.IndexOf('release {', $gradle.IndexOf('buildTypes'))
-            if ($releaseStart -lt 0) { throw 'Could not find the release build type.' }
-            $signingAt = $gradle.IndexOf('signingConfig', $releaseStart)
-            if ($signingAt -ge 0) {
-              $lineEnd = $gradle.IndexOf("`n", $signingAt)
-              if ($lineEnd -lt 0) { throw 'Could not locate release signing line.' }
-              $gradle = $gradle.Remove($signingAt, $lineEnd - $signingAt).Insert($signingAt, 'signingConfig signingConfigs.release')
-            } else {
-              $close = $gradle.IndexOf('}', $releaseStart)
-              if ($close -lt 0) { throw 'Could not patch release build type.' }
-              $gradle = $gradle.Insert($close, "`n        signingConfig signingConfigs.release`n    ")
-            }
+          $signingAt = $gradle.IndexOf($needle, $releaseAt)
+          if ($signingAt -ge 0) {
+            $gradle = $gradle.Remove($signingAt, $needle.Length).Insert($signingAt, 'signingConfig signingConfigs.release')
+          } elseif ($gradle.IndexOf('signingConfig signingConfigs.release', $releaseAt) -lt 0) {
+            $close = $gradle.IndexOf('}', $releaseAt)
+            if ($close -lt 0) { throw 'Could not patch the release build type.' }
+            $gradle = $gradle.Insert($close, "`r`n        signingConfig signingConfigs.release`r`n    ")
           }
           Set-Content -Path $gradleFile -Value $gradle -NoNewline
           Write-Host 'Release signing configured.'

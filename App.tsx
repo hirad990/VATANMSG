@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, getPrivacySettings, updatePrivacySettings, listActiveSessions, deleteAccount, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser, type VatanPrivacySettings, type VatanSession } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -188,7 +188,9 @@ function AppContent() {
   const [accentColor, setAccentColor] = useState('#8B7CFF');
   const [roomWallpapers, setRoomWallpapers] = useState<Record<string, string>>({});
   const [selectedActionMessage, setSelectedActionMessage] = useState<VatanMessage | null>(null);
-  const [privacyPrefs, setPrivacyPrefs] = useState({ phone: 'nobody', profile: 'everyone', lastSeen: 'contacts', invites: 'contacts' } as { phone: string; profile: string; lastSeen: string; invites: string });
+  const [privacyPrefs, setPrivacyPrefs] = useState<VatanPrivacySettings>({ phone: 'nobody', profile: 'everyone', lastSeen: 'contacts', invites: 'contacts' });
+  const [sessionsList, setSessionsList] = useState<VatanSession[]>([]);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
   const [channelSignatures, setChannelSignatures] = useState<Record<string, boolean>>({});
 
   const t = COPY[lang];
@@ -497,6 +499,45 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openPrivacySettings = async () => {
+    setModal('privacy');
+    if (!apiToken) return;
+    setBusy(true);
+    try { setPrivacyPrefs(await getPrivacySettings(apiToken)); }
+    catch (error) { showAlert(error instanceof Error ? error.message : 'Could not load privacy settings.'); }
+    finally { setBusy(false); }
+  };
+
+  const savePrivacySettings = async () => {
+    if (!apiToken) return;
+    setBusy(true);
+    try { setPrivacyPrefs(await updatePrivacySettings(apiToken, privacyPrefs)); showAlert(lang === 'fa' ? 'تنظیمات حریم خصوصی در سرور ذخیره شد.' : 'Privacy settings saved on the server.'); }
+    catch (error) { showAlert(error instanceof Error ? error.message : 'Could not save privacy settings.'); }
+    finally { setBusy(false); }
+  };
+
+  const openSessions = async () => {
+    setModal('sessions');
+    if (!apiToken) return;
+    setBusy(true);
+    try { setSessionsList(await listActiveSessions(apiToken)); }
+    catch (error) { showAlert(error instanceof Error ? error.message : 'Could not load sessions.'); }
+    finally { setBusy(false); }
+  };
+
+  const removeMyAccount = async () => {
+    if (!apiToken || deleteAccountPassword.length < 8) { showAlert(lang === 'fa' ? 'برای حذف حساب، رمز عبور فعلی را وارد کن.' : 'Enter your current password to delete the account.'); return; }
+    Alert.alert(lang === 'fa' ? 'حذف دائمی حساب؟' : 'Delete account permanently?', lang === 'fa' ? 'این کار برگشت‌پذیر نیست و پیام‌های ارسالی شما حذف می‌شوند.' : 'This cannot be undone and your sent messages will be deleted.', [
+      { text: t.cancel, style: 'cancel' },
+      { text: lang === 'fa' ? 'حذف دائمی' : 'Delete permanently', style: 'destructive', onPress: () => { void (async () => {
+        setBusy(true);
+        try { await deleteAccount(apiToken, deleteAccountPassword); await clearSavedSession(); setApiToken(null); setUserId(null); setRooms([]); setMessages([]); setActiveRoom(null); setModal(null); setDeleteAccountPassword(''); }
+        catch (error) { showAlert(error instanceof Error ? error.message : 'Could not delete account.'); }
+        finally { setBusy(false); }
+      })(); } }
+    ]);
   };
 
   const signOutEverywhere = async () => {
@@ -1146,7 +1187,7 @@ function AppContent() {
       </View>
       <Text style={[styles.settingSection, { color: c.muted }]}>{t.account}</Text>
       <View style={[styles.settingCard, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <Pressable onPress={() => setModal('privacy')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <Pressable onPress={() => { void openPrivacySettings(); }} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="shield-checkmark-outline" size={20} color={c.primary} /></View>
           <Text style={[styles.settingLabel, { color: c.text }]}>{t.privacy}</Text>
           <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={c.muted} />
@@ -1278,15 +1319,15 @@ function AppContent() {
               </View>
             </View>
             {modal === 'privacy' ? <>
-              <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? 'این گزینه‌ها فعلاً روی همین دستگاه ذخیره می‌شوند؛ برای اعمال روی همه دستگاه‌ها باید پشتیبانی سمت سرور فعال شود.' : 'These choices are currently stored on this device; server support is required to enforce them across devices.'}</Text>
+              
               {[['phone', lang === 'fa' ? 'چه کسی شماره‌ام را ببیند؟' : 'Who can see my phone number?'], ['profile', lang === 'fa' ? 'چه کسی پروفایلم را ببیند؟' : 'Who can see my profile?'], ['lastSeen', lang === 'fa' ? 'چه کسی آخرین بازدیدم را ببیند؟' : 'Who can see my last seen?'], ['invites', lang === 'fa' ? 'چه کسی بتواند به گروه اضافه‌ام کند؟' : 'Who can add me to groups?']].map(([key, label]) => <View key={key} style={{ marginBottom: 14 }}><Text style={[styles.fieldLabel, { color: c.text }]}>{label}</Text><View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>{[['everyone', lang === 'fa' ? 'همه' : 'Everyone'], ['contacts', lang === 'fa' ? 'مخاطبین' : 'Contacts'], ['nobody', lang === 'fa' ? 'هیچ‌کس' : 'Nobody']].map(([value, title]) => <Pressable key={value} onPress={() => setPrivacyPrefs(previous => ({ ...previous, [key]: value }))} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: privacyPrefs[key as keyof typeof privacyPrefs] === value ? c.primary : c.input, borderWidth: 1, borderColor: c.border }}><Text style={{ color: privacyPrefs[key as keyof typeof privacyPrefs] === value ? '#fff' : c.muted, fontSize: 11, fontWeight: '800' }}>{title}</Text></Pressable>)}</View></View>)}
-              <Pressable onPress={() => { setModal('sessions'); }} style={[styles.loginButton, { borderColor: c.border, marginTop: 4 }]}><Ionicons name="phone-portrait-outline" size={18} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions'}</Text></Pressable>
-              <Pressable onPress={() => showAlert(lang === 'fa' ? 'حذف دائمی حساب هنوز به مسیر امن حذف حساب در سرور نیاز دارد؛ برای جلوگیری از حذف ناقص، این دکمه فعلاً غیرفعال است.' : 'Account deletion needs a secure server-side endpoint; it is not enabled yet to avoid partial deletion.')} style={[styles.loginButton, { borderColor: '#E34E68', marginTop: 8 }]}><Ionicons name="trash-outline" size={18} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'حذف حساب کاربری' : 'Delete account'}</Text></Pressable>
-              <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+              <Pressable onPress={() => { void openSessions(); }} style={[styles.loginButton, { borderColor: c.border, marginTop: 4 }]}><Ionicons name="phone-portrait-outline" size={18} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions'}</Text></Pressable>
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'برای حذف حساب، رمز عبور فعلی را وارد کن' : 'Current password to delete account'}</Text><TextInput value={deleteAccountPassword} onChangeText={setDeleteAccountPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border }]} /><Pressable disabled={busy || deleteAccountPassword.length < 8} onPress={removeMyAccount} style={[styles.loginButton, { borderColor: '#E34E68', marginTop: 8, opacity: deleteAccountPassword.length < 8 ? 0.5 : 1 }]}><Ionicons name="trash-outline" size={18} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'حذف دائمی حساب کاربری' : 'Delete account permanently'}</Text></Pressable>
+              <Pressable disabled={busy} onPress={() => { void savePrivacySettings(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable><Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'sessions' ? <>
-              <View style={{ padding: 16, borderRadius: 16, backgroundColor: c.input, gap: 8 }}><Ionicons name="phone-portrait-outline" size={28} color={c.primary} /><Text style={{ color: c.text, fontWeight: '800' }}>{lang === 'fa' ? 'نشست فعلی' : 'Current session'}</Text><Text style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>{lang === 'fa' ? `دستگاه: ${Platform.OS} · اطلاعات IP و موقعیت تا زمان اضافه شدن ثبت امن نشست‌ها در سرور در دسترس نیست.` : `Device: ${Platform.OS} · IP and location are unavailable until secure session metadata is added server-side.`}</Text></View>
+              {sessionsList.map(session => <View key={session.id} style={{ padding: 14, borderRadius: 16, backgroundColor: c.input, gap: 5, marginBottom: 8 }}><View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}><Ionicons name="phone-portrait-outline" size={20} color={session.isCurrent ? c.primary : c.muted} /><Text style={{ color: c.text, fontWeight: '800', flex: 1 }}>{session.isCurrent ? (lang === 'fa' ? 'این دستگاه' : 'This device') : (lang === 'fa' ? 'نشست دیگر' : 'Other session')}</Text>{session.isCurrent && <Text style={{ color: c.primary, fontSize: 10 }}>●</Text>}</View><Text style={{ color: c.muted, fontSize: 10 }}>{lang === 'fa' ? 'IP' : 'IP'}: {session.ipAddress || '—'}</Text><Text style={{ color: c.muted, fontSize: 10 }} numberOfLines={2}>{session.userAgent || (lang === 'fa' ? 'اطلاعات دستگاه موجود نیست' : 'Device details unavailable')}</Text><Text style={{ color: c.muted, fontSize: 10 }}>{lang === 'fa' ? 'موقعیت جغرافیایی با IP تخمین زده نشده' : 'Geographic location is not resolved from IP'}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{lang === 'fa' ? 'آخرین فعالیت: ' : 'Last active: '}{session.lastSeenAt}</Text></View>)}{sessionsList.length === 0 && <Text style={{ color: c.muted, padding: 14 }}>{busy ? '…' : (lang === 'fa' ? 'نشست فعالی پیدا نشد.' : 'No active sessions found.')}</Text>}
               <Pressable onPress={signOutEverywhere} disabled={busy} style={[styles.loginButton, { borderColor: '#E34E68' }]}><Ionicons name="log-out-outline" size={18} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'خروج از همه نشست‌ها' : 'Revoke all sessions'}</Text></Pressable>
-              <Pressable onPress={() => setModal('privacy')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+              <Pressable onPress={() => { void openPrivacySettings(); }} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'messageActions' ? <>
               <View style={{ backgroundColor: c.input, borderRadius: 16, padding: 14, marginBottom: 10 }}><Text style={{ color: c.text, fontSize: 13 }}>{selectedActionMessage?.body || (lang === 'fa' ? 'پیوست' : 'Attachment')}</Text></View>
               {[[ 'return-up-back-outline', lang === 'fa' ? 'پاسخ' : 'Reply', 'reply'], ['arrow-redo-outline', lang === 'fa' ? 'هدایت / فوروارد' : 'Forward', 'forward'], ['bookmark-outline', lang === 'fa' ? 'ذخیره در پیام‌های ذخیره‌شده' : 'Save to Saved Messages', 'save']].map(([icon, label, action]) => <Pressable key={action} onPress={() => { const message = selectedActionMessage; setModal(action === 'forward' ? 'forward' : 'chat'); if (message && action === 'reply') { setReplyingTo(message); setEditingMessageId(null); } if (message && action === 'save') toggleSavedMessage(message); if (message && action === 'forward') setSelectedMessageIds([message.id]); setSelectedActionMessage(null); }} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}><Ionicons name={icon as any} size={21} color={c.primary} /><Text style={{ color: c.text, fontWeight: '800', flex: 1 }}>{label}</Text><Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={17} color={c.muted} /></Pressable>)}

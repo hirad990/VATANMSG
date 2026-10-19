@@ -1305,7 +1305,7 @@ function AppContent() {
         })}
       </View>
 
-      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => setModal(null)}>
+      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => modal === 'chat' ? closeActiveChat() : setModal(null)}>
         <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
@@ -1501,7 +1501,7 @@ function AppContent() {
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.backend}</Text>
               <Pressable disabled={busy} onPress={() => { void loginToApi(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : (loginMode === 'login' ? (lang === 'fa' ? 'ورود به حساب' : 'Sign in') : (lang === 'fa' ? 'ساخت حساب' : 'Create account'))}</Text></Pressable>
             </>}
-            <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
+            <Pressable onPress={() => modal === 'chat' ? closeActiveChat() : setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted, fontWeight: '700' }}>{t.cancel}</Text></Pressable>
           </Animated.View>
         </KeyboardAvoidingView>
       </Modal>

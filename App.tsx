@@ -151,6 +151,7 @@ function AppContent() {
   const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | 'privacy' | 'messageActions' | 'sessions' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
+  const [channelId, setChannelId] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [search, setSearch] = useState('');
   const [loginUsername, setLoginUsername] = useState('');
@@ -577,7 +578,7 @@ function AppContent() {
     setBusy(true);
     try {
       const result = modal === 'channel'
-        ? await createChannel(apiToken, roomName.trim(), roomDescription.trim())
+        ? await createChannel(apiToken, roomName.trim(), roomDescription.trim(), channelId.trim())
         : await createGroup(apiToken, roomName.trim(), roomDescription.trim());
       const conversation = result.conversation;
       const room: Room = {
@@ -591,6 +592,7 @@ function AppContent() {
       setRooms(prev => [room, ...prev.filter(item => item.id !== room.id)]);
       setRoomName('');
       setRoomDescription('');
+      setChannelId('');
       setModal(null);
       setTab(conversation.kind === 'channel' ? 'channels' : 'groups');
     } catch (error) {
@@ -678,7 +680,7 @@ function AppContent() {
   };
 
   const openGroupSettings = async () => {
-    if (!apiToken || !activeRoom || activeRoom.kind !== 'group') return;
+    if (!apiToken || !activeRoom || !['group','channel'].includes(activeRoom.kind)) return;
     setBusy(true);
     try {
       const [settings, membersResult] = await Promise.all([
@@ -689,6 +691,7 @@ function AppContent() {
       setGroupMembers(membersResult.members);
       setRoomName(settings.title);
       setRoomDescription(settings.description ?? '');
+      setChannelId(settings.channelId ?? '');
       setModal('groupSettings');
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Could not load group settings.');
@@ -729,9 +732,11 @@ function AppContent() {
         memberCanInvite: groupSettings.memberCanInvite,
         memberCanPin: groupSettings.memberCanPin,
         slowModeSeconds: groupSettings.slowModeSeconds,
-        showSignatures: groupSettings.showSignatures
+        showSignatures: groupSettings.showSignatures,
+        ...(activeRoom.kind === 'channel' ? { channelId: channelId.trim() } : {})
       });
       setGroupSettings(updated);
+      if (activeRoom.kind === 'channel') setChannelId(updated.channelId ?? '');
       const nextRoom = { ...activeRoom, title: updated.title, subtitle: updated.description || activeRoom.subtitle };
       setActiveRoom(nextRoom);
       setRooms(previous => previous.map(room => room.id === nextRoom.id ? nextRoom : room));
@@ -1104,7 +1109,7 @@ function AppContent() {
         <Avatar icon={kind === 'group' ? 'people' : 'megaphone'} color={c.primary} size={66} />
         <Text style={[styles.pageTitle, { color: c.text }]}>{kind === 'group' ? t.groups : t.channels}</Text>
         <Text style={[styles.pageSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{t.emptyBody}</Text>
-        <Pressable onPress={() => { setModal(kind); setRoomName(''); setRoomDescription(''); }} style={[styles.primaryButton, { backgroundColor: c.primary, marginTop: 14 }]}>
+        <Pressable onPress={() => { setModal(kind); setRoomName(''); setRoomDescription(''); setChannelId(''); }} style={[styles.primaryButton, { backgroundColor: c.primary, marginTop: 14 }]}>
           <Ionicons name="add" size={20} color="#FFF" /><Text style={styles.primaryButtonText}>{kind === 'group' ? t.createGroup : t.createChannel}</Text>
         </Pressable>
       </View>
@@ -1310,10 +1315,10 @@ function AppContent() {
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { if (!apiToken || !activeRoom || !groupSettings) return; setBusy(true); void updateConversationSettings(apiToken, activeRoom.id, { showSignatures: !groupSettings.showSignatures }).then(settings => { setGroupSettings(settings); showAlert(lang === 'fa' ? 'تنظیم امضای کانال ذخیره شد.' : 'Channel signature setting saved.'); }).catch(error => showAlert(error instanceof Error ? error.message : 'Could not save channel setting.')).finally(() => setBusy(false)); }}><Ionicons name={groupSettings?.showSignatures ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { if (!apiToken || !activeRoom || !groupSettings) return; setBusy(true); void updateConversationSettings(apiToken, activeRoom.id, { showSignatures: !groupSettings.showSignatures }).then(settings => { setGroupSettings(settings); showAlert(lang === 'fa' ? 'تنظیم امضای کانال ذخیره شد.' : 'Channel signature setting saved.'); }).catch(error => showAlert(error instanceof Error ? error.message : 'Could not save channel setting.')).finally(() => setBusy(false)); }}><Ionicons name={groupSettings?.showSignatures ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && (activeRoom?.kind === 'group' || activeRoom?.kind === 'channel') && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => modal === 'chat' ? closeActiveChat() : setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
@@ -1346,6 +1351,7 @@ function AppContent() {
               <TextInput value={roomName} onChangeText={setRoomName} placeholder={modal === 'group' ? (lang === 'fa' ? 'مثلاً دوستان' : 'e.g. Friends') : (lang === 'fa' ? 'مثلاً اخبار وطن' : 'e.g. Vatan News')} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={60} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
               <TextInput value={roomDescription} onChangeText={setRoomDescription} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={180} />
+              {modal === 'channel' && <><Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'شناسهٔ کانال (بدون @)' : 'Channel ID (without @)'}</Text><TextInput value={channelId} onChangeText={v => setChannelId(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} autoCapitalize="none" placeholder="vatan_news" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={32} /><Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? 'این شناسه با @ قابل جست‌وجو است و باید یکتا باشد.' : 'This unique ID can be opened with @.'}</Text></>}
               <Text style={[styles.demoNote, { color: c.muted }]}>{apiToken ? (lang === 'fa' ? 'این گفتگو روی سرور ساخته می‌شود.' : 'This conversation will be created on the server.') : (lang === 'fa' ? 'برای ساخت گفتگو باید ابتدا به API وصل شوی.' : 'Connect to the API before creating a conversation.')}</Text>
               <Pressable onPress={createRoom} style={[styles.modalPrimary, { backgroundColor: c.primary }]}><Text style={styles.primaryButtonText}>{t.create}</Text></Pressable>
             </> : modal === 'searchMessages' ? <>
@@ -1369,6 +1375,7 @@ function AppContent() {
                 <TextInput value={roomName} onChangeText={setRoomName} maxLength={100} editable={canManageGroup} placeholder={t.name} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.description}</Text>
                 <TextInput value={roomDescription} onChangeText={setRoomDescription} maxLength={280} editable={canManageGroup} placeholder={t.description} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
+                {activeRoom?.kind === 'channel' && <><Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'شناسهٔ کانال (بدون @)' : 'Channel ID (without @)'}</Text><TextInput value={channelId} onChangeText={v => setChannelId(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32))} editable={canManageGroup} autoCapitalize="none" placeholder="vatan_news" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={32} />}
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'آدرس HTTPS عکس گروه (اختیاری)' : 'Group avatar HTTPS URL (optional)'}</Text>
                 <TextInput value={groupSettings?.avatarUrl ?? ''} onChangeText={v => setGroupSettings(current => current ? { ...current, avatarUrl: v.trim() || null } : current)} editable={canManageGroup} autoCapitalize="none" placeholder="https://…" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
                 <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'تم گروه' : 'Group theme'}</Text>
@@ -1441,9 +1448,9 @@ function AppContent() {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    {activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : <Pressable disabled={mine} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} /></Pressable>}
+                    {activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : <Pressable disabled={mine} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={36} uri={message.avatarUrl ?? null} /></Pressable>}
                     <View style={{ maxWidth: '88%' }}>
-                      <Pressable disabled={mine || (activeRoom?.kind === 'channel' && !groupSettings?.showSignatures)} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? (lang === 'fa' ? 'کانال وطن' : 'Channel') : (message.displayName || message.username)}{(activeRoom?.kind !== 'channel' || groupSettings?.showSignatures) && message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <Pressable disabled={mine || (activeRoom?.kind === 'channel' && !groupSettings?.showSignatures)} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{(message.displayName || message.username)}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
                       <Pressable onLongPress={() => { setSelectedActionMessage(message); setModal('messageActions'); }} delayLongPress={280} style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>

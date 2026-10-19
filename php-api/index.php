@@ -75,6 +75,24 @@ function api_search_users(): never
     api_response(['users' => $users]);
 }
 
+function api_resolve_identifier(): never
+{
+    api_method('GET');
+    api_user();
+    $query = trim((string)($_GET['q'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_]{1,32}$/', $query)) api_response(['users' => [], 'channels' => []]);
+    $pdo = api_db();
+    $stmt = $pdo->prepare('SELECT id, username, display_name, avatar_url FROM users WHERE username = ? LIMIT 1');
+    $stmt->execute([$query]);
+    $users = [];
+    foreach ($stmt->fetchAll() as $row) $users[] = ['id' => (string)$row['id'], 'username' => $row['username'], 'displayName' => $row['display_name'], 'avatarUrl' => $row['avatar_url']];
+    $stmt = $pdo->prepare("SELECT id, title, channel_id, description, avatar_url FROM conversations WHERE type = 'channel' AND channel_id = ? LIMIT 1");
+    $stmt->execute([$query]);
+    $channels = [];
+    foreach ($stmt->fetchAll() as $row) $channels[] = ['id' => (string)$row['id'], 'kind' => 'channel', 'title' => $row['title'], 'channelId' => $row['channel_id'], 'description' => $row['description'], 'avatarUrl' => $row['avatar_url']];
+    api_response(['users' => $users, 'channels' => $channels]);
+}
+
 function api_create_direct_conversation(): never
 {
     api_method('POST');
@@ -722,7 +740,7 @@ function api_list_conversations(): never
     api_method('GET');
     $user = api_user();
     $stmt = api_db()->prepare(
-        'SELECT c.id, c.title,
+        'SELECT c.id, c.title, c.channel_id,
                 (SELECT u.display_name FROM conversation_members cm2 JOIN users u ON u.id = cm2.user_id
                  WHERE cm2.conversation_id = c.id AND cm2.user_id <> cm.user_id LIMIT 1) AS direct_title,
                 (SELECT u.avatar_url FROM conversation_members cm2 JOIN users u ON u.id = cm2.user_id
@@ -743,6 +761,7 @@ function api_list_conversations(): never
             'kind' => $row['type'] === 'private' ? 'direct' : $row['type'],
             'type' => $row['type'],
             'title' => $row['title'] ?? $row['direct_title'] ?? '',
+            'channelId' => $row['channel_id'] ?? null,
             'description' => $row['description'] ?? null,
             'role' => $row['role'],
             'avatarUrl' => $row['type'] === 'private' ? ($row['direct_avatar_url'] ?? null) : null,
@@ -762,6 +781,7 @@ function api_create_conversation(): never
     $type = (string)($data['type'] ?? 'group');
     $title = trim((string)($data['title'] ?? ''));
     $description = trim((string)($data['description'] ?? ''));
+    $channelId = strtolower(trim((string)($data['channel_id'] ?? '')));
 
     if (!in_array($type, ['group', 'channel'], true)) {
         api_response(['error' => 'Type must be group or channel'], 422);
@@ -772,12 +792,14 @@ function api_create_conversation(): never
     if (mb_strlen($description) > 280) {
         api_response(['error' => 'Description is too long'], 422);
     }
+    if ($type === 'channel' && $channelId !== '' && !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
+    if ($type !== 'channel') $channelId = '';
 
     $pdo = api_db();
     $pdo->beginTransaction();
     try {
-        $stmt = $pdo->prepare('INSERT INTO conversations (title, description, type, created_by) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$title, $description === '' ? null : $description, $type, $user['id']]);
+        $stmt = $pdo->prepare('INSERT INTO conversations (title, description, type, created_by, channel_id) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$title, $description === '' ? null : $description, $type, $user['id'], $channelId === '' ? null : $channelId]);
         $id = (int)$pdo->lastInsertId();
         $role = $type === 'channel' ? 'owner' : 'owner';
         $stmt = $pdo->prepare('INSERT INTO conversation_members (conversation_id, user_id, role) VALUES (?, ?, ?)');
@@ -792,6 +814,7 @@ function api_create_conversation(): never
                 'type' => $type,
                 'title' => $title,
                 'description' => $description === '' ? null : $description,
+                'channelId' => $channelId === '' ? null : $channelId,
                 'role' => 'owner'
             ]
         ], 201);
@@ -997,11 +1020,11 @@ function api_update_conversation_settings(): never
         api_response(['error' => 'Only group owners/admins can manage group settings'], 403);
     }
     if ($method === 'GET') {
-        $stmt = api_db()->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds, s.show_signatures FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
+        $stmt = api_db()->prepare('SELECT c.id, c.title, c.channel_id, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds, s.show_signatures FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         api_response(['settings' => [
-            'id' => (string)$row['id'], 'title' => $row['title'], 'description' => $row['description'],
+            'id' => (string)$row['id'], 'title' => $row['title'], 'channelId' => $row['channel_id'] ?? null, 'description' => $row['description'],
             'avatarUrl' => $row['avatar_url'], 'themeKey' => $row['theme_key'] ?? 'violet',
             'themeMode' => $row['theme_mode'] ?? 'system',
             'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
@@ -1023,6 +1046,17 @@ function api_update_conversation_settings(): never
         $description = trim((string)$data['description']);
         if (mb_strlen($description) > 280) api_response(['error' => 'Description is too long'], 422);
         $sets[] = 'description = ?'; $values[] = $description === '' ? null : $description;
+    }
+    if (array_key_exists('channelId', $data)) {
+        if ($membership['type'] !== 'channel') api_response(['error' => 'Only channels can have a channel ID'], 422);
+        $channelId = strtolower(trim((string)$data['channelId']));
+        if ($channelId !== '' && !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
+        if ($channelId !== '') {
+            $check = api_db()->prepare('SELECT id FROM conversations WHERE channel_id = ? AND id <> ? LIMIT 1');
+            $check->execute([$channelId, $id]);
+            if ($check->fetch()) api_response(['error' => 'This channel ID is already in use'], 409);
+        }
+        $sets[] = 'channel_id = ?'; $values[] = $channelId === '' ? null : $channelId;
     }
     if (array_key_exists('avatarUrl', $data)) {
         $avatar = $data['avatarUrl'];
@@ -1077,7 +1111,7 @@ function api_update_conversation_settings(): never
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     api_response(['success' => true, 'settings' => [
-        'id' => (string)$row['id'], 'title' => $row['title'], 'description' => $row['description'],
+        'id' => (string)$row['id'], 'title' => $row['title'], 'channelId' => $row['channel_id'] ?? null, 'description' => $row['description'],
         'avatarUrl' => $row['avatar_url'], 'themeKey' => $row['theme_key'] ?? 'violet',
         'themeMode' => $row['theme_mode'] ?? 'system',
         'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
@@ -1477,6 +1511,8 @@ try {
             break;
         case 'users/search':
             api_search_users();
+        case 'resolve':
+            api_resolve_identifier();
             break;
         case 'conversations/direct':
             api_create_direct_conversation();

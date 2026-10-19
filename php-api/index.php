@@ -365,7 +365,7 @@ function api_user(): array
     if (!$user) {
         api_response(['error' => 'Invalid or expired token'], 401);
     }
-    api_db()->prepare('UPDATE api_tokens SET last_seen_at = UTC_TIMESTAMP(), ip_address = COALESCE(ip_address, ?), user_agent = COALESCE(user_agent, ?) WHERE token_hash = ?')->execute([substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255), hash('sha256', $token)]);
+    try { api_db()->prepare('UPDATE api_tokens SET last_seen_at = UTC_TIMESTAMP(), ip_address = ?, user_agent = ? WHERE token_hash = ?')->execute([substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255), hash('sha256', $token)]); } catch (PDOException $e) { /* Older installations need upgrade-v2.1.sql for session metadata. */ }
     return $user;
 }
 
@@ -386,11 +386,13 @@ function api_issue_auth_token(int $userId, array $config): string
 {
     $token = bin2hex(random_bytes(32));
     $days = max(1, min(365, (int)($config['token_expiry_days'] ?? 90)));
-    $stmt = api_db()->prepare(
-        'INSERT INTO api_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
-         VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY), ?, ?, UTC_TIMESTAMP())'
-    );
-    $stmt->execute([$userId, hash('sha256', $token), substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255)]);
+    try {
+        $stmt = api_db()->prepare('INSERT INTO api_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at) VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY), ?, ?, UTC_TIMESTAMP())');
+        $stmt->execute([$userId, hash('sha256', $token), substr((string)($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255)]);
+    } catch (PDOException $e) {
+        $stmt = api_db()->prepare('INSERT INTO api_tokens (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ' . $days . ' DAY))');
+        $stmt->execute([$userId, hash('sha256', $token)]);
+    }
     return $token;
 }
 

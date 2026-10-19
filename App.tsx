@@ -148,7 +148,7 @@ function AppContent() {
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | 'privacy' | 'messageActions' | 'sessions' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -185,6 +185,10 @@ function AppContent() {
   const [savedDataReady, setSavedDataReady] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [appPrefsReady, setAppPrefsReady] = useState(false);
+  const [accentColor, setAccentColor] = useState('#8B7CFF');
+  const [roomWallpapers, setRoomWallpapers] = useState<Record<string, string>>({});
+  const [selectedActionMessage, setSelectedActionMessage] = useState<VatanMessage | null>(null);
+  const [privacyPrefs, setPrivacyPrefs] = useState({ phone: 'nobody', profile: 'everyone', lastSeen: 'contacts', invites: 'contacts' } as { phone: string; profile: string; lastSeen: string; invites: string });
 
   const t = COPY[lang];
   const tapFeedback = () => {
@@ -214,10 +218,10 @@ function AppContent() {
   const dark = theme === 'dark';
   const c = dark ? {
     bg: '#080D1A', surface: '#10182A', card: '#151F35', text: '#F5F7FF', muted: '#9AA8C2',
-    border: '#26334E', primary: '#8B7CFF', soft: '#24264A', input: '#0C1425'
+    border: '#26334E', primary: accentColor, soft: '#24264A', input: '#0C1425'
   } : {
     bg: '#F4F5FC', surface: '#FFFFFF', card: '#FFFFFF', text: '#171A32', muted: '#747D96',
-    border: '#E5E7F2', primary: '#635BEE', soft: '#EFEDFF', input: '#F7F7FC'
+    border: '#E5E7F2', primary: accentColor, soft: '#EFEDFF', input: '#F7F7FC'
   };
   const isRTL = lang === 'fa';
 
@@ -720,6 +724,29 @@ function AppContent() {
     }
   };
 
+  const closeActiveChat = () => {
+    Animated.timing(chatTransition, { toValue: isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+      if (!finished) return;
+      setModal(null);
+      setActiveRoom(null);
+      setSelectedMessageIds([]);
+      chatTransition.setValue(0);
+    });
+  };
+
+  const openUserDirect = async (targetUsername: string) => {
+    if (!apiToken || !targetUsername || targetUsername.toLowerCase() === username.toLowerCase()) return;
+    setBusy(true);
+    try {
+      const result = await createDirectConversation(apiToken, targetUsername);
+      const room: Room = { id: result.conversation.id, title: result.conversation.title, subtitle: lang === 'fa' ? 'گفت‌وگوی خصوصی' : 'Private chat', icon: 'person', kind: 'direct', avatarUrl: result.conversation.avatarUrl };
+      setRooms(previous => previous.some(item => item.id === room.id) ? previous : [room, ...previous]);
+      setSelectedActionMessage(null);
+      openRoom(room);
+    } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not open private chat.'); }
+    finally { setBusy(false); }
+  };
+
   const openRoom = (room: Room) => {
     tapFeedback();
     chatTransition.setValue(isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width);
@@ -1088,7 +1115,7 @@ function AppContent() {
       <Pressable onPress={() => setModal('profile')} style={[styles.profileCard, { backgroundColor: c.surface, borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <Avatar icon="person" color={c.primary} size={64} uri={photo} />
         <View style={[styles.profileCardInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-          <Text style={[styles.profileName, { color: c.text }]}>{displayName || t.profile}</Text>
+          <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 5 }}><Text style={[styles.profileName, { color: c.text }]}>{displayName || t.profile}</Text>{username.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={18} color="#2997FF" />}</View>
           <Text style={{ color: c.muted }}>@{username || 'username'}</Text>
           <Text style={{ color: c.primary, fontWeight: '700', marginTop: 5 }}>{t.editProfile}  ›</Text>
         </View>
@@ -1111,7 +1138,7 @@ function AppContent() {
       </View>
       <Text style={[styles.settingSection, { color: c.muted }]}>{t.account}</Text>
       <View style={[styles.settingCard, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <Pressable onPress={() => showAlert(lang === 'fa' ? 'نشست فعلی با رمز عبور محافظت می‌شود. از «خروج از همه دستگاه‌ها» برای لغو نشست‌های دیگر استفاده کن. رمز عبور را با کسی به اشتراک نگذار.' : 'Your session is password-protected. Use “Sign out all devices” to revoke other sessions. Never share your password.')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+        <Pressable onPress={() => setModal('privacy')} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="shield-checkmark-outline" size={20} color={c.primary} /></View>
           <Text style={[styles.settingLabel, { color: c.text }]}>{t.privacy}</Text>
           <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color={c.muted} />
@@ -1235,14 +1262,28 @@ function AppContent() {
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
-                <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
+                {modal === 'chat' && <Pressable onPress={() => { const palette = ['#8B7CFF','#16B8A6','#2997FF','#F59E0B','#EC4899']; const index = palette.indexOf(accentColor); setAccentColor(palette[(index + 1) % palette.length]); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                <Pressable onPress={() => modal === 'chat' ? closeActiveChat() : setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
-            {modal === 'forward' ? <>
+            {modal === 'privacy' ? <>
+              <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? 'این گزینه‌ها فعلاً روی همین دستگاه ذخیره می‌شوند؛ برای اعمال روی همه دستگاه‌ها باید پشتیبانی سمت سرور فعال شود.' : 'These choices are currently stored on this device; server support is required to enforce them across devices.'}</Text>
+              {[['phone', lang === 'fa' ? 'چه کسی شماره‌ام را ببیند؟' : 'Who can see my phone number?'], ['profile', lang === 'fa' ? 'چه کسی پروفایلم را ببیند؟' : 'Who can see my profile?'], ['lastSeen', lang === 'fa' ? 'چه کسی آخرین بازدیدم را ببیند؟' : 'Who can see my last seen?'], ['invites', lang === 'fa' ? 'چه کسی بتواند به گروه اضافه‌ام کند؟' : 'Who can add me to groups?']].map(([key, label]) => <View key={key} style={{ marginBottom: 14 }}><Text style={[styles.fieldLabel, { color: c.text }]}>{label}</Text><View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>{[['everyone', lang === 'fa' ? 'همه' : 'Everyone'], ['contacts', lang === 'fa' ? 'مخاطبین' : 'Contacts'], ['nobody', lang === 'fa' ? 'هیچ‌کس' : 'Nobody']].map(([value, title]) => <Pressable key={value} onPress={() => setPrivacyPrefs(previous => ({ ...previous, [key]: value }))} style={{ paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: privacyPrefs[key as keyof typeof privacyPrefs] === value ? c.primary : c.input, borderWidth: 1, borderColor: c.border }}><Text style={{ color: privacyPrefs[key as keyof typeof privacyPrefs] === value ? '#fff' : c.muted, fontSize: 11, fontWeight: '800' }}>{title}</Text></Pressable>)}</View></View>)}
+              <Pressable onPress={() => { setModal('sessions'); }} style={[styles.loginButton, { borderColor: c.border, marginTop: 4 }]}><Ionicons name="phone-portrait-outline" size={18} color={c.primary} /><Text style={{ color: c.primary, fontWeight: '800' }}>{lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions'}</Text></Pressable>
+              <Pressable onPress={() => showAlert(lang === 'fa' ? 'حذف دائمی حساب هنوز به مسیر امن حذف حساب در سرور نیاز دارد؛ برای جلوگیری از حذف ناقص، این دکمه فعلاً غیرفعال است.' : 'Account deletion needs a secure server-side endpoint; it is not enabled yet to avoid partial deletion.')} style={[styles.loginButton, { borderColor: '#E34E68', marginTop: 8 }]}><Ionicons name="trash-outline" size={18} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'حذف حساب کاربری' : 'Delete account'}</Text></Pressable>
+              <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+            </> : modal === 'sessions' ? <>
+              <View style={{ padding: 16, borderRadius: 16, backgroundColor: c.input, gap: 8 }}><Ionicons name="phone-portrait-outline" size={28} color={c.primary} /><Text style={{ color: c.text, fontWeight: '800' }}>{lang === 'fa' ? 'نشست فعلی' : 'Current session'}</Text><Text style={{ color: c.muted, fontSize: 11, lineHeight: 18 }}>{lang === 'fa' ? `دستگاه: ${Platform.OS} · اطلاعات IP و موقعیت تا زمان اضافه شدن ثبت امن نشست‌ها در سرور در دسترس نیست.` : `Device: ${Platform.OS} · IP and location are unavailable until secure session metadata is added server-side.`}</Text></View>
+              <Pressable onPress={signOutEverywhere} disabled={busy} style={[styles.loginButton, { borderColor: '#E34E68' }]}><Ionicons name="log-out-outline" size={18} color="#E34E68" /><Text style={{ color: '#E34E68', fontWeight: '800' }}>{lang === 'fa' ? 'خروج از همه نشست‌ها' : 'Revoke all sessions'}</Text></Pressable>
+              <Pressable onPress={() => setModal('privacy')} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+            </> : modal === 'messageActions' ? <>
+              <View style={{ backgroundColor: c.input, borderRadius: 16, padding: 14, marginBottom: 10 }}><Text style={{ color: c.text, fontSize: 13 }}>{selectedActionMessage?.body || (lang === 'fa' ? 'پیوست' : 'Attachment')}</Text></View>
+              {[[ 'return-up-back-outline', lang === 'fa' ? 'پاسخ' : 'Reply', 'reply'], ['arrow-redo-outline', lang === 'fa' ? 'هدایت / فوروارد' : 'Forward', 'forward'], ['bookmark-outline', lang === 'fa' ? 'ذخیره در پیام‌های ذخیره‌شده' : 'Save to Saved Messages', 'save']].map(([icon, label, action]) => <Pressable key={action} onPress={() => { const message = selectedActionMessage; setModal(action === 'forward' ? 'forward' : 'chat'); if (message && action === 'reply') { setReplyingTo(message); setEditingMessageId(null); } if (message && action === 'save') toggleSavedMessage(message); if (message && action === 'forward') setSelectedMessageIds([message.id]); setSelectedActionMessage(null); }} style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}><Ionicons name={icon as any} size={21} color={c.primary} /><Text style={{ color: c.text, fontWeight: '800', flex: 1 }}>{label}</Text><Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={17} color={c.muted} /></Pressable>)}
+              <Pressable onPress={() => { setSelectedActionMessage(null); setModal('chat'); }} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
+            </> : modal === 'forward' ? <>
               <Text style={[styles.demoNote, { color: c.muted }]}>{lang === 'fa' ? `${selectedMessageIds.length} پیام انتخاب شده. پیام‌های متنی به گفت‌وگوی مقصد فرستاده می‌شوند.` : `${selectedMessageIds.length} messages selected. Text content will be sent to the destination chat.`}</Text>
               <ScrollView style={{ maxHeight: '65%' }}>
                 {rooms.map(room => <Pressable key={room.id} disabled={busy} onPress={() => { void forwardSelectedMessages(room); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, opacity: busy ? 0.5 : 1 }]}>
@@ -1347,15 +1388,15 @@ function AppContent() {
                   <Pressable onPress={() => setSelectedMessageIds([])}><Ionicons name="close-circle-outline" size={20} color={c.muted} /></Pressable>
                 </View>
               </View>}
-              <ScrollView style={styles.fullChatMessages} contentContainerStyle={{ gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
+              <ScrollView style={[styles.fullChatMessages, { backgroundColor: roomWallpapers[activeRoom?.id ?? ''] ?? 'transparent', borderRadius: 16 }]} contentContainerStyle={{ gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
                   return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
+                    <Pressable disabled={mine || activeRoom?.kind === 'channel'} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={activeRoom?.kind === 'channel' ? null : message.avatarUrl ?? null} /></Pressable>
                     <View style={{ maxWidth: '88%' }}>
-                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text>
-                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
+                      <Pressable disabled={activeRoom?.kind === 'channel' || mine} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'کانال وطن' : 'Channel admin') : (message.displayName || message.username)}{activeRoom?.kind !== 'channel' && message.username ? ' · @' + message.username : ''}{(message.senderId === userId || message.username?.toLowerCase() === 'hirad990') && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <Pressable onLongPress={() => { setSelectedActionMessage(message); setModal('messageActions'); }} delayLongPress={280} style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                         {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
@@ -1364,7 +1405,7 @@ function AppContent() {
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}
                         <Text style={{ color: c.muted, fontSize: 9, marginTop: 4 }}>{message.createdAt}{message.editedAt ? (lang === 'fa' ? ' · ویرایش‌شده' : ' · edited') : ''}{message.status === 'sending' ? (lang === 'fa' ? ' · در حال ارسال…' : ' · sending…') : message.status === 'failed' ? (lang === 'fa' ? ' · ارسال ناموفق' : ' · failed') : mine && (message.readCount ?? 0) > 0 ? (lang === 'fa' ? ' · خوانده شد' : ' · read') : mine && message.status === 'sent' ? (lang === 'fa' ? ' · ارسال شد' : ' · sent') : ''}</Text>
-                      </View>
+                      </Pressable>
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 4 }}>
                         {(['👍','❤️','😂','🔥'] as const).map(emoji => {
                           const count = reactions.find(item => item.reaction === emoji)?.count ?? 0;

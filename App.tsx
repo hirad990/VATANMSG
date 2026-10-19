@@ -773,6 +773,8 @@ function AppContent() {
       void Promise.all([getConversationSettings(apiToken, room.id), getConversationMembers(apiToken, room.id)])
         .then(([settings, members]) => { setGroupSettings(settings); setGroupMembers(members.members); })
         .catch(() => undefined);
+    } else if (room.kind === 'channel') {
+      void getConversationMembers(apiToken, room.id).then(members => setGroupMembers(members.members)).catch(() => undefined);
     }
   };
 
@@ -969,7 +971,7 @@ function AppContent() {
           {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
         </View>
         <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
-        {room.kind === 'channel' && <Text numberOfLines={1} style={{ color: c.primary, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{lang === 'fa' ? `شناسه کانال: ${room.id}` : `Channel ID: ${room.id}`}</Text>}
+        {room.kind === 'channel' && channelSignatures[room.id] && <Text numberOfLines={1} style={{ color: c.primary, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{lang === 'fa' ? `شناسه کانال: ${room.id}` : `Channel ID: ${room.id}`}</Text>}
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
         onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>
@@ -1271,7 +1273,7 @@ function AppContent() {
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings') : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
-                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && <Pressable onPress={() => { setChannelSignatures(previous => ({ ...previous, [activeRoom.id]: !previous[activeRoom.id] })); showAlert(lang === 'fa' ? 'نمایش امضای کانال برای همین دستگاه تغییر کرد.' : 'Channel signatures changed on this device.'); }}><Ionicons name={channelSignatures[activeRoom.id] ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
+                {modal === 'chat' && <Pressable onPress={() => { if (!activeRoom) return; const palette = ['transparent','#14233D','#263047','#183B37','#3A233B']; const current = roomWallpapers[activeRoom.id] ?? 'transparent'; const index = palette.indexOf(current); setRoomWallpapers(previous => ({ ...previous, [activeRoom.id]: palette[(index + 1) % palette.length] })); }}><Ionicons name="color-palette-outline" size={22} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'channel' && groupMembers.some(member => member.id === userId && ['owner','admin'].includes(member.role)) && <Pressable onPress={() => { setChannelSignatures(previous => ({ ...previous, [activeRoom.id]: !previous[activeRoom.id] })); showAlert(lang === 'fa' ? 'نمایش امضای کانال برای همین دستگاه تغییر کرد؛ برای همگام‌سازی بین دستگاه‌ها تنظیم سرور لازم است.' : 'Channel signatures changed on this device; server support is required to sync across devices.'); }}><Ionicons name={channelSignatures[activeRoom.id] ? 'eye-outline' : 'eye-off-outline'} size={21} color={c.primary} /></Pressable>}{modal === 'chat' && activeRoom?.kind === 'group' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
                 <Pressable onPress={() => modal === 'chat' ? closeActiveChat() : setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
@@ -1354,7 +1356,7 @@ function AppContent() {
                   const currentRole = groupMembers.find(item => item.id === userId)?.role;
                   const canManage = currentRole === 'owner' || currentRole === 'admin';
                   return <View key={member.id} style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border }}>
-                    <Avatar icon="person" color={c.primary} size={38} uri={member.avatarUrl} />
+                    <Pressable onPress={() => { void openUserDirect(member.username); }}><Avatar icon="person" color={c.primary} size={38} uri={member.avatarUrl} /></Pressable>
                     <View style={{ flex: 1 }}>
                       <Pressable onPress={() => { void openUserDirect(member.username); }}><View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 4 }}><Text style={{ color: c.text, fontWeight: '800', fontSize: 12 }}>{member.displayName}</Text>{member.id === userId && <Ionicons name="checkmark-circle" size={13} color="#2997FF" />}</View></Pressable>
                       <Text style={{ color: c.muted, fontSize: 10 }}>@{member.username} · {member.role}</Text>

@@ -191,7 +191,6 @@ function AppContent() {
   const [privacyPrefs, setPrivacyPrefs] = useState<VatanPrivacySettings>({ phone: 'nobody', profile: 'everyone', lastSeen: 'contacts', invites: 'contacts' });
   const [sessionsList, setSessionsList] = useState<VatanSession[]>([]);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
-  const [channelSignatures, setChannelSignatures] = useState<Record<string, boolean>>({});
 
   const t = COPY[lang];
   const tapFeedback = () => {
@@ -236,14 +235,13 @@ function AppContent() {
         if (!cancelled && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
-            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown; accentColor?: unknown; privacyPrefs?: unknown; roomWallpapers?: unknown; channelSignatures?: unknown };
+            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown; accentColor?: unknown; privacyPrefs?: unknown; roomWallpapers?: unknown };
             if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
             if (prefs.lang === 'fa' || prefs.lang === 'en') setLang(prefs.lang);
             if (typeof prefs.notificationsEnabled === 'boolean') setNotificationsEnabled(prefs.notificationsEnabled);
             if (typeof prefs.accentColor === 'string' && ['#8B7CFF','#16B8A6','#2997FF','#F59E0B','#EC4899'].includes(prefs.accentColor)) setAccentColor(prefs.accentColor);
             if (prefs.privacyPrefs && typeof prefs.privacyPrefs === 'object') setPrivacyPrefs(prefs.privacyPrefs as typeof privacyPrefs);
             if (prefs.roomWallpapers && typeof prefs.roomWallpapers === 'object') setRoomWallpapers(prefs.roomWallpapers as Record<string, string>);
-            if (prefs.channelSignatures && typeof prefs.channelSignatures === 'object') setChannelSignatures(prefs.channelSignatures as Record<string, boolean>);
           }
         }
       } catch { /* Keep defaults when preferences are unavailable. */ }
@@ -255,8 +253,8 @@ function AppContent() {
 
   useEffect(() => {
     if (!appPrefsReady) return;
-    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled, accentColor, privacyPrefs, roomWallpapers, channelSignatures })).catch(() => undefined);
-  }, [theme, lang, notificationsEnabled, accentColor, privacyPrefs, roomWallpapers, channelSignatures, appPrefsReady]);
+    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled, accentColor, privacyPrefs, roomWallpapers })).catch(() => undefined);
+  }, [theme, lang, notificationsEnabled, accentColor, privacyPrefs, roomWallpapers, appPrefsReady]);
 
   useEffect(() => {
     let cancelled = false;

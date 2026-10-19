@@ -1015,7 +1015,6 @@ function AppContent() {
           {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
         </View>
         <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
-        {room.kind === 'channel' && channelSignatures[room.id] && <Text numberOfLines={1} style={{ color: c.primary, fontSize: 10, fontWeight: '700', marginTop: 2 }}>{lang === 'fa' ? `شناسه کانال: ${room.id}` : `Channel ID: ${room.id}`}</Text>}
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
         onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>

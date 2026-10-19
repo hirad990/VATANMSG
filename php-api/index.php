@@ -1278,6 +1278,77 @@ function api_message_attachments(int $messageId): array
     return $items;
 }
 
+function api_upload_profile_avatar(): never
+{
+    api_method('POST');
+    $user = api_user();
+
+    if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
+        api_response(['error' => 'Choose a profile photo to upload'], 422);
+    }
+    $file = $_FILES['file'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) {
+        api_response(['error' => 'Photo upload failed. Check the hosting upload size limit.'], 400);
+    }
+    $size = (int)($file['size'] ?? 0);
+    if ($size < 1 || $size > 5 * 1024 * 1024) {
+        api_response(['error' => 'Profile photos must be 5 MB or smaller'], 413);
+    }
+
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']);
+    $imageInfo = @getimagesize((string)$file['tmp_name']);
+    if (!isset($allowed[$mime]) || !$imageInfo || ($imageInfo['mime'] ?? '') !== $mime) {
+        api_response(['error' => 'Use a valid JPG, PNG, WEBP, or GIF image'], 415);
+    }
+    if ((int)($imageInfo[0] ?? 0) > 6000 || (int)($imageInfo[1] ?? 0) > 6000) {
+        api_response(['error' => 'Profile photo dimensions are too large'], 413);
+    }
+
+    $storageDir = dirname(__DIR__) . '/uploads/avatars';
+    if (!is_dir($storageDir) && !mkdir($storageDir, 0755, true) && !is_dir($storageDir)) {
+        api_response(['error' => 'Profile photo storage is unavailable on the host'], 500);
+    }
+    $rules = $storageDir . '/.htaccess';
+    if (!is_file($rules)) {
+        file_put_contents($rules, "Options -Indexes\n<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh)$\">\nRequire all denied\n</FilesMatch>\n");
+    }
+
+    $storedName = bin2hex(random_bytes(24)) . '.' . $allowed[$mime];
+    $destination = $storageDir . '/' . $storedName;
+    if (!move_uploaded_file((string)$file['tmp_name'], $destination)) {
+        api_response(['error' => 'Could not save the profile photo on the server'], 500);
+    }
+    @chmod($destination, 0644);
+    $avatarUrl = 'https://binercraft.ir/uploads/avatars/' . $storedName;
+
+    try {
+        $pdo = api_db();
+        $pdo->prepare('UPDATE users SET avatar_url = ? WHERE id = ?')->execute([$avatarUrl, $user['id']]);
+        $stmt = $pdo->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE id = ?');
+        $stmt->execute([$user['id']]);
+        $updatedUser = $stmt->fetch();
+        if (!$updatedUser) {
+            @unlink($destination);
+            api_response(['error' => 'Could not load the updated profile'], 500);
+        }
+    } catch (Throwable $e) {
+        @unlink($destination);
+        throw $e;
+    }
+
+    $oldAvatar = (string)($user['avatar_url'] ?? '');
+    $avatarPrefix = 'https://binercraft.ir/uploads/avatars/';
+    if (str_starts_with($oldAvatar, $avatarPrefix)) {
+        $oldName = basename($oldAvatar);
+        if ($oldName !== $storedName && preg_match('/^[a-f0-9]{48}\\.(jpg|png|webp|gif)$/', $oldName)) {
+            @unlink($storageDir . '/' . $oldName);
+        }
+    }
+
+    api_response(['success' => true, 'avatarUrl' => $avatarUrl, 'user' => api_public_user($updatedUser)]);
+}
+
 function api_upload_media(): never
 {
     api_method('POST');
@@ -1546,6 +1617,9 @@ try {
             break;
         case 'conversations/transfer-ownership':
             api_transfer_conversation_ownership();
+            break;
+        case 'media/avatar-upload':
+            api_upload_profile_avatar();
             break;
         case 'media/upload':
             api_upload_media();

@@ -3,7 +3,7 @@
     "name": "پیام‌رسان وطن",
     "slug": "vatanmsg",
     "scheme": "vatanmsg",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -25,6 +25,10 @@
         }
       ],
       "expo-notifications"
-    ]
+    ],
+    "icon": "./favicon.png",
+    "web": {
+      "favicon": "./favicon.png"
+    }
   }
 }

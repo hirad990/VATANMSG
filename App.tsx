@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, getPrivacySettings, updatePrivacySettings, listActiveSessions, deleteAccount, joinConversation, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, resolveIdentifier, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser, type VatanPrivacySettings, type VatanSession } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, getPrivacySettings, updatePrivacySettings, listActiveSessions, deleteAccount, joinConversation, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, resolveIdentifier, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, uploadProfileAvatar, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser, type VatanPrivacySettings, type VatanSession } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -615,14 +615,25 @@ function AppContent() {
     }
     setBusy(true);
     try {
+      let savedAvatarUrl = photo && /^https?:\/\//i.test(photo) ? photo : undefined;
+      if (photo && !/^https?:\/\//i.test(photo)) {
+        const uploaded = await uploadProfileAvatar(apiToken, {
+          uri: photo,
+          name: `vatan-avatar-${Date.now()}.jpg`,
+          type: 'image/jpeg'
+        });
+        savedAvatarUrl = uploaded.avatarUrl;
+      }
       const user = await updateMyProfile(apiToken, {
         displayName: displayName.trim(),
         username: username.trim(),
         birthYear: parsedYear,
-        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian'
+        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian',
+        ...(savedAvatarUrl ? { avatarUrl: savedAvatarUrl } : {})
       });
       setDisplayName(user.displayName);
       setUsername(user.username);
+      setPhoto(user.avatarUrl);
       setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
       setCalendar(user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
       setModal(null);

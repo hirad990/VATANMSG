@@ -148,6 +148,33 @@ export async function updateMyProfile(token: string, profile: {
   return normalizeUser(result);
 }
 
+export async function uploadProfileAvatar(
+  token: string,
+  file: { uri: string; name: string; type: string }
+): Promise<{ avatarUrl: string }> {
+  const form = new FormData();
+  if (typeof window !== 'undefined') {
+    const blob = await fetch(file.uri).then(response => {
+      if (!response.ok) throw new Error('Could not read the selected profile photo.');
+      return response.blob();
+    });
+    form.append('file', blob, file.name);
+  } else {
+    form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+  }
+  const response = await fetch(`${API_BASE_URL}/media/avatar-upload`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    body: form
+  });
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new VatanApiError(payload.error || `Profile photo upload failed (${response.status}).`, response.status);
+  if (typeof payload.avatarUrl !== 'string' || !payload.avatarUrl.startsWith('https://')) {
+    throw new VatanApiError('The server did not return a valid profile photo URL.', 500);
+  }
+  return { avatarUrl: payload.avatarUrl };
+}
+
 export async function logout(token: string): Promise<void> {
   await request('/auth/logout', token, { method: 'POST', body: '{}' });
 }

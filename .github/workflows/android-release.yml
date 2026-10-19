@@ -80,31 +80,39 @@ jobs:
           $gradleFile = 'android/app/build.gradle'
           $gradle = Get-Content $gradleFile -Raw
 
-          # Insert the release signing config INSIDE the existing signingConfigs container.
+          # Inject config immediately after the signingConfigs opening brace.
           if ($gradle -notmatch 'vatan-release\.keystore') {
-            $pattern = '(?s)(signingConfigs\s*\{\s*debug\s*\{.*?\r?\n\s*\})(\s*\})'
-            $replacement = '$1' + "`r`n    release {`r`n        storeFile file(''vatan-release.keystore'')`r`n        storePassword System.getenv(''VATAN_STORE_PASSWORD'')`r`n        keyAlias System.getenv(''VATAN_KEY_ALIAS'')`r`n        keyPassword System.getenv(''VATAN_KEY_PASSWORD'')`r`n    }" + '$2'
-            $updated = [regex]::Replace($gradle, $pattern, $replacement, 1)
-            if ($updated -eq $gradle) { throw 'Could not insert release config inside the existing signingConfigs block.' }
-            $gradle = $updated
+            $marker = 'signingConfigs {'
+            if (-not $gradle.Contains($marker)) { throw 'Could not find signingConfigs opening block.' }
+            $config = @"
+          signingConfigs {
+              release {
+                  storeFile file('vatan-release.keystore')
+                  storePassword System.getenv('VATAN_STORE_PASSWORD')
+                  keyAlias System.getenv('VATAN_KEY_ALIAS')
+                  keyPassword System.getenv('VATAN_KEY_PASSWORD')
+              }
+          "@
+            $gradle = $gradle.Replace($marker, $config.TrimEnd())
           }
 
-          # Find the release build type only after the buildTypes block, then point it at the release key.
+          # Change only the release buildType's signingConfig, leaving debug untouched.
           $buildTypesAt = $gradle.IndexOf('buildTypes')
+          if ($buildTypesAt -lt 0) { throw 'Could not locate buildTypes.' }
           $releaseAt = $gradle.IndexOf('release {', $buildTypesAt)
-          if ($buildTypesAt -lt 0 -or $releaseAt -lt 0) { throw 'Could not locate the release build type.' }
-          $needle = 'signingConfig signingConfigs.debug'
-          $signingAt = $gradle.IndexOf($needle, $releaseAt)
-          if ($signingAt -ge 0) {
-            $gradle = $gradle.Remove($signingAt, $needle.Length).Insert($signingAt, 'signingConfig signingConfigs.release')
-          } elseif ($gradle.IndexOf('signingConfig signingConfigs.release', $releaseAt) -lt 0) {
-            $close = $gradle.IndexOf('}', $releaseAt)
-            if ($close -lt 0) { throw 'Could not patch the release build type.' }
-            $gradle = $gradle.Insert($close, "`r`n        signingConfig signingConfigs.release`r`n    ")
+          if ($releaseAt -lt 0) { throw 'Could not locate release build type.' }
+          $debugSigningAt = $gradle.IndexOf('signingConfig signingConfigs.debug', $releaseAt)
+          $releaseSigningAt = $gradle.IndexOf('signingConfig signingConfigs.release', $releaseAt)
+          if ($debugSigningAt -ge 0 -and ($releaseSigningAt -lt 0 -or $debugSigningAt -lt $releaseSigningAt)) {
+            $gradle = $gradle.Remove($debugSigningAt, 'signingConfig signingConfigs.debug'.Length).Insert($debugSigningAt, 'signingConfig signingConfigs.release')
+          } elseif ($releaseSigningAt -lt 0) {
+            # Insert near the start of the release block; Android's generated release block has no nested braces before its signing line.
+            $insertAt = $releaseAt + 'release {'.Length
+            $gradle = $gradle.Insert($insertAt, "`r`n            signingConfig signingConfigs.release")
           }
           Set-Content -Path $gradleFile -Value $gradle -NoNewline
           Write-Host 'Release signing configured.'
-
+          
       - name: Build signed release APK using gradlew.bat
         shell: pwsh
         working-directory: android

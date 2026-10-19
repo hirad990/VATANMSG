@@ -1,86 +1,84 @@
-name: VATANMSG Android Release APK
+name: VATANMSG 2.1.0 Release APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
       - '2.1.0'
     paths:
+      - 'App.*'
       - 'app.json'
       - 'package.json'
-      - 'App.*'
+      - 'package-lock.json'
       - 'src/**'
       - 'assets/**'
+      - 'php-api/**'
       - '.github/workflows/android-release.yml'
 
 permissions:
   contents: read
 
-jobs:
-  build-release:
-    name: Build Release APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+concurrency:
+  group: vatanmsg-2.1.0-windows-release-${{ github.ref }}
+  cancel-in-progress: false
 
+jobs:
+  apk-release:
+    name: Build release APK with gradlew.bat
+    runs-on: windows-latest
+    timeout-minutes: 90
     steps:
-      - name: Checkout Repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Setup Java
+      - name: Setup Java for Gradle
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install npm dependencies
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Install JavaScript dependencies
+        shell: pwsh
         run: npm install --no-audit --no-fund
 
-      - name: Generate Android native project
+      - name: Generate Android project with Expo
+        shell: pwsh
         run: npx expo prebuild --platform android --no-install
+        env:
+          CI: '1'
 
-      - name: Install Android NDK with retries
-        shell: bash
+      - name: Install Android SDK packages and NDK
+        shell: pwsh
         run: |
-          set +e
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "Could not find sdkmanager under $ANDROID_HOME/cmdline-tools"
-            exit 1
-          fi
-          echo "Using SDK manager: $SDKMANAGER"
-          export PATH="$(dirname "$SDKMANAGER"):$ANDROID_HOME/platform-tools:$PATH"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1
-          for attempt in 1 2 3; do
-            echo "Installing NDK, attempt $attempt of 3"
-            "$SDKMANAGER" --install "ndk;27.1.12297006"
-            if [ $? -eq 0 ] && [ -d "$ANDROID_HOME/ndk/27.1.12297006" ]; then
-              exit 0
-            fi
-            rm -rf "$ANDROID_HOME/ndk/27.1.12297006"
-            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/temp"
-            sleep 5
-          done
-          echo "NDK installation failed after 3 attempts."
-          exit 1
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+          if ($LASTEXITCODE -ne 0) { throw "Android SDK package installation failed with exit code $LASTEXITCODE" }
 
-      - name: Build Release APK
+      - name: Build release APK using gradlew.bat
+        shell: pwsh
         working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+        run: .\gradlew.bat --no-daemon --stacktrace assembleRelease
 
-      - name: Upload Release APK
+      - name: Verify release APK exists
+        shell: pwsh
+        run: |
+          $apk = Get-ChildItem "android/app/build/outputs/apk/release" -Filter "*.apk" -File | Select-Object -First 1
+          if (-not $apk) { throw "Gradle completed without producing a release APK." }
+          Get-ChildItem "android/app/build/outputs/apk/release" -Filter "*.apk" -File | Format-Table Name, Length
+
+      - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VATANMSG-Release-APK
+          name: VATANMSG-2.1.0-apk-release
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30

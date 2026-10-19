@@ -792,10 +792,16 @@ function api_create_conversation(): never
     if (mb_strlen($description) > 280) {
         api_response(['error' => 'Description is too long'], 422);
     }
-    if ($type === 'channel' && $channelId !== '' && !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
+    if ($type === 'channel' && $channelId === '') api_response(['error' => 'Set a unique channel ID before creating the channel'], 422);
+    if ($type === 'channel' && !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
     if ($type !== 'channel') $channelId = '';
 
     $pdo = api_db();
+    if ($type === 'channel') {
+        $check = $pdo->prepare('SELECT id FROM conversations WHERE channel_id = ? LIMIT 1');
+        $check->execute([$channelId]);
+        if ($check->fetch()) api_response(['error' => 'This channel ID is already in use'], 409);
+    }
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare('INSERT INTO conversations (title, description, type, created_by, channel_id) VALUES (?, ?, ?, ?, ?)');
@@ -1050,7 +1056,7 @@ function api_update_conversation_settings(): never
     if (array_key_exists('channelId', $data)) {
         if ($membership['type'] !== 'channel') api_response(['error' => 'Only channels can have a channel ID'], 422);
         $channelId = strtolower(trim((string)$data['channelId']));
-        if ($channelId !== '' && !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
+        if ($channelId === '' || !preg_match('/^[a-zA-Z0-9_]{3,32}$/', $channelId)) api_response(['error' => 'Channel ID must be 3-32 letters, numbers or underscores'], 422);
         if ($channelId !== '') {
             $check = api_db()->prepare('SELECT id FROM conversations WHERE channel_id = ? AND id <> ? LIMIT 1');
             $check->execute([$channelId, $id]);

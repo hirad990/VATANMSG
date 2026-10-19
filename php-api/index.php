@@ -995,7 +995,7 @@ function api_update_conversation_settings(): never
         api_response(['error' => 'Only group owners/admins can manage group settings'], 403);
     }
     if ($method === 'GET') {
-        $stmt = api_db()->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
+        $stmt = api_db()->prepare('SELECT c.id, c.title, c.description, c.avatar_url, s.theme_key, s.theme_mode, s.member_can_send, s.member_can_invite, s.member_can_pin, s.slow_mode_seconds, s.show_signatures FROM conversations c LEFT JOIN conversation_settings s ON s.conversation_id = c.id WHERE c.id = ?');
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         api_response(['settings' => [
@@ -1005,7 +1005,8 @@ function api_update_conversation_settings(): never
             'memberCanSend' => (bool)($row['member_can_send'] ?? 1),
             'memberCanInvite' => (bool)($row['member_can_invite'] ?? 0),
             'memberCanPin' => (bool)($row['member_can_pin'] ?? 0),
-            'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0)
+            'slowModeSeconds' => (int)($row['slow_mode_seconds'] ?? 0),
+            'showSignatures' => (bool)($row['show_signatures'] ?? 0)
         ]]);
     }
 
@@ -1045,6 +1046,10 @@ function api_update_conversation_settings(): never
             if (!is_bool($data[$input]) && !in_array($data[$input], [0,1,'0','1'], true)) api_response(['error' => 'Invalid group permission'], 422);
             $settings[$column] = (int)(bool)$data[$input];
         }
+    }
+    if (array_key_exists('showSignatures', $data)) {
+        if (!is_bool($data['showSignatures']) && !in_array($data['showSignatures'], [0,1,'0','1'], true)) api_response(['error' => 'Invalid signature setting'], 422);
+        $settings['show_signatures'] = (int)(bool)$data['showSignatures'];
     }
     if (array_key_exists('slowModeSeconds', $data)) {
         $slow = filter_var($data['slowModeSeconds'], FILTER_VALIDATE_INT);

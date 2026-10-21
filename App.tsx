@@ -138,6 +138,10 @@ function AppContent() {
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
+  const chatScale = useRef(new Animated.Value(0.96)).current;
+  const chatOpacity = useRef(new Animated.Value(0)).current;
+  const ambientMotion = useRef(new Animated.Value(0)).current;
+  const messagePop = useRef(new Animated.Value(1)).current;
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
@@ -171,6 +175,7 @@ function AppContent() {
   const [userId, setUserId] = useState<string | null>(null);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [messages, setMessages] = useState<VatanMessage[]>([]);
+  const [messagePopId, setMessagePopId] = useState<string | null>(null);
   const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
   const [messageDraft, setMessageDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<VatanMessage | null>(null);
@@ -333,6 +338,16 @@ function AppContent() {
   useEffect(() => {
     Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
   }, [heroMotion]);
+
+  // Slow, subtle ambient drift gives the glass background life without distracting from messages.
+  useEffect(() => {
+    const drift = Animated.loop(Animated.sequence([
+      Animated.timing(ambientMotion, { toValue: 1, duration: 6800, useNativeDriver: true }),
+      Animated.timing(ambientMotion, { toValue: 0, duration: 6800, useNativeDriver: true })
+    ]));
+    drift.start();
+    return () => drift.stop();
+  }, [ambientMotion]);
 
   useEffect(() => {
     tabMotion.setValue(0);
@@ -785,12 +800,18 @@ function AppContent() {
   };
 
   const closeActiveChat = () => {
-    Animated.timing(chatTransition, { toValue: isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width, duration: 220, useNativeDriver: true }).start(({ finished }) => {
+    Animated.parallel([
+      Animated.timing(chatTransition, { toValue: isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width, duration: 240, useNativeDriver: true }),
+      Animated.timing(chatScale, { toValue: 0.965, duration: 210, useNativeDriver: true }),
+      Animated.timing(chatOpacity, { toValue: 0, duration: 170, useNativeDriver: true })
+    ]).start(({ finished }) => {
       if (!finished) return;
       setModal(null);
       setActiveRoom(null);
       setSelectedMessageIds([]);
       chatTransition.setValue(0);
+      chatScale.setValue(0.96);
+      chatOpacity.setValue(0);
     });
   };
 
@@ -846,7 +867,13 @@ function AppContent() {
   const openRoom = (room: Room) => {
     tapFeedback();
     chatTransition.setValue(isRTL ? Dimensions.get('window').width : -Dimensions.get('window').width);
-    Animated.spring(chatTransition, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 220, mass: 0.8 }).start();
+    chatScale.setValue(0.965);
+    chatOpacity.setValue(0);
+    Animated.parallel([
+      Animated.spring(chatTransition, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 220, mass: 0.8 }),
+      Animated.spring(chatScale, { toValue: 1, useNativeDriver: true, damping: 19, stiffness: 210, mass: 0.72 }),
+      Animated.timing(chatOpacity, { toValue: 1, duration: 190, useNativeDriver: true })
+    ]).start();
     if (!apiToken) {
       showAlert(lang === 'fa' ? 'اول به API وصل شو.' : 'Connect to the API first.');
       setModal('login');
@@ -942,11 +969,15 @@ function AppContent() {
       replyToId: replyingTo?.id ?? null, status: 'sending', clientMessageId
     };
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMessagePopId(localId);
+    messagePop.setValue(0.78);
+    Animated.spring(messagePop, { toValue: 1, useNativeDriver: true, speed: 22, bounciness: 12 }).start();
     setMessages(previous => [...previous, optimistic]);
     setMessageDraft('');
     setReplyingTo(null);
     try {
       const result = await sendMessage(apiToken, activeRoom.id, body, { replyToId: optimistic.replyToId, clientMessageId });
+      setMessagePopId(result.message.id);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setMessages(previous => previous.map(message => message.id === localId ? { ...result.message, status: 'sent', clientMessageId } : message));
     } catch (error) {
@@ -1329,8 +1360,8 @@ function AppContent() {
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-        <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
-        <View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03 }]} />
+        <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }, { translateX: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [-14, 18] }) }, { rotate: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: ['-5deg', '9deg'] }) }] }]} />
+        <Animated.View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03, transform: [{ translateY: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [12, -18] }) }, { translateX: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [8, -12] }) }] }]} />
       </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1359,7 +1390,7 @@ function AppContent() {
       <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => modal === 'chat' ? closeActiveChat() : setModal(null)}>
         <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
-          <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
+          <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), opacity: chatOpacity, transform: [{ translateX: chatTransition }, { scale: chatScale }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
               <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'privacy' ? (lang === 'fa' ? 'حریم خصوصی و امنیت' : 'Privacy & security') : modal === 'sessions' ? (lang === 'fa' ? 'نشست‌های فعال' : 'Active sessions') : modal === 'messageActions' ? (lang === 'fa' ? 'عملیات پیام' : 'Message actions') : modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
@@ -1494,7 +1525,7 @@ function AppContent() {
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
-                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
+                  return <Animated.View key={message.id} style={[{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }, messagePopId === message.id && { opacity: messagePop, transform: [{ scale: messagePop }] }]}>
                     {activeRoom?.kind === 'channel' && !groupSettings?.showSignatures ? null : <Pressable disabled={mine} onPress={() => { void openUserDirect(message.username); }}><Avatar icon="person" color={mine ? c.primary : '#159A73'} size={36} uri={message.avatarUrl ?? null} /></Pressable>}
                     <View style={{ maxWidth: '88%' }}>
                       <Pressable disabled={mine || (activeRoom?.kind === 'channel' && !groupSettings?.showSignatures)} onPress={() => { void openUserDirect(message.username); }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{(message.displayName || message.username)}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
@@ -1521,7 +1552,7 @@ function AppContent() {
                         {message.status === 'failed' && <Pressable onPress={() => { void retryMessage(message); }} style={{ paddingHorizontal: 4, paddingVertical: 3 }}><Ionicons name="refresh" size={15} color="#E34E68" /></Pressable>}
                       </View>
                     </View>
-                  </View>;
+                  </Animated.View>;
                 })}
               </ScrollView>
               {activeRoom?.kind === 'group' && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>

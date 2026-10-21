@@ -116,6 +116,10 @@ jobs:
       - name: Build signed release APK using gradlew.bat
         shell: pwsh
         working-directory: android
+        env:
+          VATAN_STORE_PASSWORD: ${{ secrets.VATAN_STORE_PASSWORD }}
+          VATAN_KEY_ALIAS: ${{ secrets.VATAN_KEY_ALIAS }}
+          VATAN_KEY_PASSWORD: ${{ secrets.VATAN_KEY_PASSWORD }}
         run: .\gradlew.bat --no-daemon --stacktrace assembleRelease
 
       - name: Verify APK is signed with release key

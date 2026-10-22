@@ -339,8 +339,8 @@ function AppContent() {
   }, [messageDraft, activeRoom?.id, savedDataReady, editingMessageId]);
 
   useEffect(() => {
-    Animated.timing(heroMotion, { toValue: 1, duration: motionEnabled ? 900 : 0, useNativeDriver: true }).start();
-  }, [heroMotion]);
+    Animated.timing(heroMotion, { toValue: 1, duration: motionEnabled ? 700 : 0, useNativeDriver: true }).start();
+  }, [heroMotion, motionEnabled]);
 
   useEffect(() => {
     tabMotion.setValue(motionEnabled ? 0 : 1);
@@ -1186,14 +1186,14 @@ function AppContent() {
         </View>
       </View>
       <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
-        {foundUsers.map(person => <Pressable key={person.id} onPress={() => { void startDirectChat(person); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
+        {foundUsers.map(person => <View key={person.id} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
           <Avatar icon="person" color={c.primary} uri={person.avatarUrl} />
           <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
             <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text></Pressable>
             <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></Pressable>
           </View>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} />
-        </Pressable>)}
+          <Pressable onPress={() => { void startDirectChat(person); }} hitSlop={8} style={{ padding: 8 }} accessibilityRole="button" accessibilityLabel={lang === 'fa' ? 'شروع گفتگو' : 'Start chat'}><Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} /></Pressable>
+        </View>)}
         {foundUsers.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : t.noContacts}</Text>}
       </View>
     </>

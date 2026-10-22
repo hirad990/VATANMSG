@@ -1,0 +1,29 @@
+name: V2.3 validation
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - feature/v2.3-native-ui
+
+jobs:
+  app-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+  php-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP syntax
+        run: php -l php-api/index.php

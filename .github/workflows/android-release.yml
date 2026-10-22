@@ -1,10 +1,10 @@
-name: VATANMSG Android Release APK
+name: VATANMSG V2.3 Signed Release APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - feature/v2.3-native-ui
     paths:
       - 'app.json'
       - 'package.json'
@@ -17,69 +17,79 @@ permissions:
   contents: read
 
 jobs:
-  build-release:
-    name: Build Release APK
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 90
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
+      - name: Locate preinstalled Android SDK
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { $env:ANDROID_HOME = 'C:\\Android\\android-sdk' }
+          if (!(Test-Path $env:ANDROID_HOME)) { throw "Android SDK not found at $env:ANDROID_HOME" }
+          "ANDROID_HOME=$env:ANDROID_HOME" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install Android SDK components
+        shell: pwsh
+        run: |
+          $sdk = Get-ChildItem "$env:ANDROID_HOME\\cmdline-tools" -Recurse -Filter "sdkmanager.bat" | Select-Object -First 1
+          if (!$sdk) { throw "sdkmanager.bat not found" }
+          & $sdk.FullName --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+          if ($LASTEXITCODE -ne 0) { throw "Android SDK install failed" }
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
-
-      - name: Generate Android native project
+      - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
-
-      - name: Install Android NDK with retries
-        shell: bash
+      - name: Configure signing from existing repository secrets
+        shell: pwsh
+        env:
+          VATAN_KEYSTORE_BASE64: ${{ secrets.VATAN_KEYSTORE_BASE64 }}
+          VATAN_KEY_ALIAS: ${{ secrets.VATAN_KEY_ALIAS }}
+          VATAN_KEY_PASSWORD: ${{ secrets.VATAN_KEY_PASSWORD }}
+          VATAN_STORE_PASSWORD: ${{ secrets.VATAN_STORE_PASSWORD }}
         run: |
-          set +e
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
-          if [ -z "$SDKMANAGER" ]; then
-            echo "Could not find sdkmanager under $ANDROID_HOME/cmdline-tools"
-            exit 1
-          fi
-          echo "Using SDK manager: $SDKMANAGER"
-          export PATH="$(dirname "$SDKMANAGER"):$ANDROID_HOME/platform-tools:$PATH"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1
-          for attempt in 1 2 3; do
-            echo "Installing NDK, attempt $attempt of 3"
-            "$SDKMANAGER" --install "ndk;27.1.12297006"
-            if [ $? -eq 0 ] && [ -d "$ANDROID_HOME/ndk/27.1.12297006" ]; then
-              exit 0
-            fi
-            rm -rf "$ANDROID_HOME/ndk/27.1.12297006"
-            rm -rf "$ANDROID_HOME/.temp" "$ANDROID_HOME/temp"
-            sleep 5
-          done
-          echo "NDK installation failed after 3 attempts."
-          exit 1
-
-      - name: Build Release APK
+          foreach ($name in @("VATAN_KEYSTORE_BASE64","VATAN_KEY_ALIAS","VATAN_KEY_PASSWORD","VATAN_STORE_PASSWORD")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { throw "Missing signing secret: $name" }
+          }
+          $keyPath = Join-Path $env:GITHUB_WORKSPACE "android\app\vatan-release.keystore"
+          [IO.File]::WriteAllBytes($keyPath, [Convert]::FromBase64String($env:VATAN_KEYSTORE_BASE64))
+          "VATAN_KEYSTORE_PATH=$keyPath" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $gradlePath = Join-Path $env:GITHUB_WORKSPACE "android\app\build.gradle"
+          $g = Get-Content $gradlePath -Raw
+          $signing = "release {`r`n storeFile file(System.getenv('VATAN_KEYSTORE_PATH'))`r`n storePassword System.getenv('VATAN_STORE_PASSWORD')`r`n keyAlias System.getenv('VATAN_KEY_ALIAS')`r`n keyPassword System.getenv('VATAN_KEY_PASSWORD')`r`n}"
+          $g = [regex]::Replace($g, '(signingConfigs\s*\{)', ('$1' + "`r`n" + $signing), 1)
+          $pattern = '(?s)(buildTypes\s*\{.*?release\s*\{.*?signingConfig\s+)signingConfigs\.debug'
+          $g2 = [regex]::Replace($g, $pattern, '$1signingConfigs.release', 1)
+          if ($g2 -eq $g) { throw "Could not configure release signing in generated Gradle file" }
+          Set-Content -Path $gradlePath -Value $g2 -NoNewline
+      - name: Build release with gradlew.bat
+        shell: pwsh
+        env:
+          VATAN_KEY_ALIAS: ${{ secrets.VATAN_KEY_ALIAS }}
+          VATAN_KEY_PASSWORD: ${{ secrets.VATAN_KEY_PASSWORD }}
+          VATAN_STORE_PASSWORD: ${{ secrets.VATAN_STORE_PASSWORD }}
         working-directory: android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
+          .\gradlew.bat assembleRelease --no-daemon
+          if ($LASTEXITCODE -ne 0) { throw "Gradle build failed" }
+      - name: Verify release signature
+        shell: pwsh
+        run: |
+          $apk = Get-ChildItem "android\app\build\outputs\apk\release" -Filter "*.apk" | Select-Object -First 1
+          if (!$apk) { throw "APK not found" }
+          $signer = Get-ChildItem "$env:ANDROID_HOME\build-tools" -Recurse -Filter "apksigner.bat" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (!$signer) { throw "apksigner not found" }
+          & $signer.FullName verify --verbose --print-certs $apk.FullName
+          if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed" }
+      - uses: actions/upload-artifact@v4
         with:
-          name: VATANMSG-Release-APK
+          name: VATANMSG-V2.3.0-Release-Signed-APK
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14

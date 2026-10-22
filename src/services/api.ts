@@ -5,6 +5,10 @@ export type VatanUser = {
   avatarUrl: string | null;
   birthYear?: number | null;
   birthCalendar?: 'solar_hijri' | 'gregorian' | null;
+  websiteUrl?: string | null;
+  instagramUrl?: string | null;
+  telegramUrl?: string | null;
+  youtubeUrl?: string | null;
 };
 
 export type VatanConversation = {
@@ -76,7 +80,11 @@ function normalizeUser(value: any): VatanUser {
     displayName: String(user.displayName ?? user.display_name ?? ''),
     avatarUrl: user.avatarUrl ?? user.avatar_url ?? null,
     birthYear: user.birthYear ?? user.birth_year ?? null,
-    birthCalendar: user.birthCalendar ?? user.birth_calendar ?? null
+    birthCalendar: user.birthCalendar ?? user.birth_calendar ?? null,
+    websiteUrl: user.websiteUrl ?? user.website_url ?? null,
+    instagramUrl: user.instagramUrl ?? user.instagram_url ?? null,
+    telegramUrl: user.telegramUrl ?? user.telegram_url ?? null,
+    youtubeUrl: user.youtubeUrl ?? user.youtube_url ?? null
   };
 }
 
@@ -132,18 +140,51 @@ export async function getMyProfile(token: string): Promise<VatanUser> {
   return normalizeUser(await request<any>('/auth/me', token));
 }
 
+export async function getUserProfile(token: string, username: string): Promise<VatanUser> {
+  const result = await request<any>(`/users/profile?username=${encodeURIComponent(username)}`, token);
+  return normalizeUser(result.user ?? result);
+}
+
 export async function updateMyProfile(token: string, profile: {
   displayName?: string;
   username?: string;
   birthYear?: number | null;
   birthCalendar?: 'solar_hijri' | 'gregorian' | null;
   avatarUrl?: string | null;
+  websiteUrl?: string | null;
+  instagramUrl?: string | null;
+  telegramUrl?: string | null;
+  youtubeUrl?: string | null;
 }): Promise<VatanUser> {
   const result = await request<any>('/auth/profile', token, {
     method: 'PATCH',
     body: JSON.stringify(profile)
   });
   return normalizeUser(result);
+}
+
+/** Upload a profile image as multipart/form-data. Do not set Content-Type manually:
+ * fetch must add the multipart boundary for React Native's FormData body.
+ */
+export async function uploadProfilePhoto(token: string, uri: string): Promise<VatanUser> {
+  const filename = uri.split('/').pop()?.split('?')[0] || 'avatar.jpg';
+  const extension = filename.split('.').pop()?.toLowerCase();
+  const mimeType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
+  const form = new FormData();
+  form.append('file', { uri, name: filename, type: mimeType } as any);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/auth/avatar`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: form
+    });
+  } catch {
+    throw new VatanApiError('Could not upload profile photo. Check your connection and API hosting.', 0);
+  }
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new VatanApiError(payload.error || `Avatar upload failed (${response.status}).`, response.status);
+  return normalizeUser(payload);
 }
 
 export async function logout(token: string): Promise<void> {

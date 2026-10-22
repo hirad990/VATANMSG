@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url VARCHAR(2048) NULL,
     birth_year SMALLINT UNSIGNED NULL,
     birth_calendar ENUM('solar_hijri', 'gregorian') NULL,
+    website_url VARCHAR(255) NULL,
+    instagram_url VARCHAR(255) NULL,
+    telegram_url VARCHAR(255) NULL,
+    youtube_url VARCHAR(255) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_users_display_name (display_name)

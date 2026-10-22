@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View, Keyboard } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,9 +12,10 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, getUserProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 
 
 if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -89,6 +90,7 @@ function Text(props: React.ComponentProps<typeof NativeText>) {
 
 type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
+type AccentPreset = 'violet' | 'blue' | 'cyan' | 'rose' | 'green' | 'amber';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
 type SavedMessage = VatanMessage & { savedAt: string };
 type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber'; avatarUrl?: string | null };
@@ -138,17 +140,28 @@ function AppContent() {
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
+  const composerLift = useRef(new Animated.Value(0)).current;
+  const voiceSoundRef = useRef<Audio.Sound | null>(null);
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [accentPreset, setAccentPreset] = useState<AccentPreset>('violet');
+  const [compactMessages, setCompactMessages] = useState(false);
+  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [telegramUrl, setTelegramUrl] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState<VatanUser | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('chats');
   const [displayName, setDisplayName] = useState('هیراد');
   const [username, setUsername] = useState('hirad');
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | 'userProfile' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -176,6 +189,7 @@ function AppContent() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, { reaction: string; count: number }[]>>({});
   const [busy, setBusy] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState<Audio.Recording | null>(null);
   const [saved, setSaved] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'direct' | 'group' | 'channel' | 'pinned'>('all');
   const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
@@ -212,12 +226,13 @@ function AppContent() {
     }
   };
   const dark = theme === 'dark';
+  const accent = ({ violet: '#8B7CFF', blue: '#3D7EFF', cyan: '#00B8D9', rose: '#F06B9A', green: '#27B98A', amber: '#E6A23C' } as Record<AccentPreset, string>)[accentPreset];
   const c = dark ? {
     bg: '#080D1A', surface: '#10182A', card: '#151F35', text: '#F5F7FF', muted: '#9AA8C2',
-    border: '#26334E', primary: '#8B7CFF', soft: '#24264A', input: '#0C1425'
+    border: '#26334E', primary: accent, soft: accent + '2E', input: '#0C1425'
   } : {
     bg: '#F4F5FC', surface: '#FFFFFF', card: '#FFFFFF', text: '#171A32', muted: '#747D96',
-    border: '#E5E7F2', primary: '#635BEE', soft: '#EFEDFF', input: '#F7F7FC'
+    border: '#E5E7F2', primary: accent, soft: accent + '20', input: '#F7F7FC'
   };
   const isRTL = lang === 'fa';
 
@@ -229,10 +244,13 @@ function AppContent() {
         if (!cancelled && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
-            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown };
+            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown; accentPreset?: unknown; compactMessages?: unknown; motionEnabled?: unknown };
             if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
             if (prefs.lang === 'fa' || prefs.lang === 'en') setLang(prefs.lang);
             if (typeof prefs.notificationsEnabled === 'boolean') setNotificationsEnabled(prefs.notificationsEnabled);
+            if (['violet','blue','cyan','rose','green','amber'].includes(String(prefs.accentPreset))) setAccentPreset(prefs.accentPreset as AccentPreset);
+            if (typeof prefs.compactMessages === 'boolean') setCompactMessages(prefs.compactMessages);
+            if (typeof prefs.motionEnabled === 'boolean') setMotionEnabled(prefs.motionEnabled);
           }
         }
       } catch { /* Keep defaults when preferences are unavailable. */ }
@@ -244,8 +262,8 @@ function AppContent() {
 
   useEffect(() => {
     if (!appPrefsReady) return;
-    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled })).catch(() => undefined);
-  }, [theme, lang, notificationsEnabled, appPrefsReady]);
+    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled, accentPreset, compactMessages, motionEnabled })).catch(() => undefined);
+  }, [theme, lang, notificationsEnabled, accentPreset, compactMessages, motionEnabled, appPrefsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,13 +339,13 @@ function AppContent() {
   }, [messageDraft, activeRoom?.id, savedDataReady, editingMessageId]);
 
   useEffect(() => {
-    Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
-  }, [heroMotion]);
+    Animated.timing(heroMotion, { toValue: 1, duration: motionEnabled ? 700 : 0, useNativeDriver: true }).start();
+  }, [heroMotion, motionEnabled]);
 
   useEffect(() => {
-    tabMotion.setValue(0);
+    tabMotion.setValue(motionEnabled ? 0 : 1);
     Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
-  }, [tab, tabMotion]);
+  }, [tab, tabMotion, motionEnabled]);
 
   // Refresh conversation membership so newly invited group members see the room.
   useEffect(() => {
@@ -436,6 +454,7 @@ function AppContent() {
         setUsername(user.username);
         setDisplayName(user.displayName);
         setPhoto(user.avatarUrl);
+        setWebsiteUrl(user.websiteUrl ?? ''); setInstagramUrl(user.instagramUrl ?? ''); setTelegramUrl(user.telegramUrl ?? ''); setYoutubeUrl(user.youtubeUrl ?? '');
         setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
         setCalendar(user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
         setRooms(conversations.conversations.map(item => ({
@@ -476,6 +495,7 @@ function AppContent() {
       setUsername(result.user.username);
       setDisplayName(result.user.displayName);
       setPhoto(result.user.avatarUrl);
+      setWebsiteUrl(result.user.websiteUrl ?? ''); setInstagramUrl(result.user.instagramUrl ?? ''); setTelegramUrl(result.user.telegramUrl ?? ''); setYoutubeUrl(result.user.youtubeUrl ?? '');
       setBirthYear(result.user.birthYear == null ? '' : String(result.user.birthYear));
       setCalendar(result.user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
       await loadConversations(result.token);
@@ -565,12 +585,25 @@ function AppContent() {
     }
     setBusy(true);
     try {
+      // Upload a newly selected local image first. Remote URLs are already saved avatars.
+      let savedAvatarUrl = photo;
+      if (photo && !/^https:\/\//i.test(photo)) {
+        const uploadedUser = await uploadProfilePhoto(apiToken, photo);
+        savedAvatarUrl = uploadedUser.avatarUrl;
+      }
       const user = await updateMyProfile(apiToken, {
         displayName: displayName.trim(),
         username: username.trim(),
         birthYear: parsedYear,
-        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian'
+        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian',
+        ...(savedAvatarUrl !== undefined ? { avatarUrl: savedAvatarUrl } : {}),
+        websiteUrl: websiteUrl.trim() || null,
+        instagramUrl: instagramUrl.trim() || null,
+        telegramUrl: telegramUrl.trim() || null,
+        youtubeUrl: youtubeUrl.trim() || null
       });
+      setPhoto(user.avatarUrl);
+      setWebsiteUrl(user.websiteUrl ?? ''); setInstagramUrl(user.instagramUrl ?? ''); setTelegramUrl(user.telegramUrl ?? ''); setYoutubeUrl(user.youtubeUrl ?? '');
       setDisplayName(user.displayName);
       setUsername(user.username);
       setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
@@ -583,6 +616,16 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openUserProfile = async (person: Pick<VatanUser, 'username' | 'displayName' | 'avatarUrl' | 'id'>) => {
+    setSelectedProfile({ ...person, birthYear: null, birthCalendar: null });
+    setModal('userProfile');
+    if (!apiToken || !person.username) return;
+    setProfileLoading(true);
+    try { setSelectedProfile(await getUserProfile(apiToken, person.username)); }
+    catch (error) { showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'نمایش پروفایل ممکن نشد.' : 'Could not load profile.')); }
+    finally { setProfileLoading(false); }
   };
 
   const searchForUsers = async () => {
@@ -789,6 +832,56 @@ function AppContent() {
     } finally { setBusy(false); }
   };
 
+  const toggleVoiceRecording = async () => {
+    if (!apiToken || !activeRoom) { showAlert(lang === 'fa' ? 'برای ارسال ویس ابتدا وارد حساب شو و یک گفتگو باز کن.' : 'Sign in and open a chat before recording.'); return; }
+    if (voiceRecording) {
+      const recording = voiceRecording;
+      setVoiceRecording(null);
+      try {
+        await recording.stopAndUnloadAsync();
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        const uri = recording.getURI();
+        if (!uri) throw new Error('Recording file was not created.');
+        await uploadFileToRoom({ uri, name: 'voice-note.m4a', type: 'audio/mp4' });
+      } catch (error) {
+        showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'ارسال ویس ناموفق بود.' : 'Could not send voice note.'));
+      }
+      return;
+    }
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) { showAlert(lang === 'fa' ? 'برای ضبط ویس اجازه میکروفون لازم است.' : 'Microphone permission is required to record voice notes.'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const result = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setVoiceRecording(result.recording);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'ضبط ویس شروع نشد.' : 'Could not start recording.'));
+    }
+  };
+
+  const playVoiceAttachment = async (url: string, name: string) => {
+    if (!apiToken) return;
+    try {
+      if (voiceSoundRef.current) {
+        await voiceSoundRef.current.unloadAsync().catch(() => undefined);
+        voiceSoundRef.current = null;
+      }
+      const safeName = name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80) || 'voice-note.m4a';
+      const destination = (FileSystem.cacheDirectory || '') + safeName;
+      const download = await FileSystem.downloadAsync(url, destination, { headers: { Authorization: `Bearer ${apiToken}` } });
+      const created = await Audio.Sound.createAsync({ uri: download.uri }, { shouldPlay: true });
+      voiceSoundRef.current = created.sound;
+      created.sound.setOnPlaybackStatusUpdate(status => {
+        if (status.isLoaded && status.didJustFinish) {
+          void created.sound.unloadAsync().catch(() => undefined);
+          if (voiceSoundRef.current === created.sound) voiceSoundRef.current = null;
+        }
+      });
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'پخش ویس ممکن نشد.' : 'Could not play voice note.'));
+    }
+  };
+
   const pickMediaForChat = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images', 'videos'], allowsMultipleSelection: false, quality: 0.85 });
     if (result.canceled || !result.assets[0]) return;
@@ -916,6 +1009,14 @@ function AppContent() {
       clearInterval(timer);
     };
   }, [modal, apiToken, activeRoom?.id]);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, () => Animated.spring(composerLift, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 2 }).start());
+    const hide = Keyboard.addListener(hideEvent, () => Animated.spring(composerLift, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 2 }).start());
+    return () => { show.remove(); hide.remove(); };
+  }, [composerLift]);
+
   const labelForTab = (x: Tab) => x === 'saved' ? t.savedTab : t[x as Exclude<Tab, 'saved'>];
   const canManageGroup = groupMembers.some(member => member.id === userId && ['owner', 'admin'].includes(member.role));
   const groupAccent = ({ violet: '#5B52E8', blue: '#2878E8', green: '#159A73', rose: '#E34E86', amber: '#D98B16', midnight: '#202B45', ocean: '#008DA8' } as Record<string, string>)[groupSettings?.themeKey ?? 'violet'] ?? c.primary;
@@ -1085,11 +1186,14 @@ function AppContent() {
         </View>
       </View>
       <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
-        {foundUsers.map(person => <Pressable key={person.id} onPress={() => { void startDirectChat(person); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
+        {foundUsers.map(person => <View key={person.id} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
           <Avatar icon="person" color={c.primary} uri={person.avatarUrl} />
-          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></View>
-          <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} />
-        </Pressable>)}
+          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+            <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text></Pressable>
+            <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></Pressable>
+          </View>
+          <Pressable onPress={() => { void startDirectChat(person); }} hitSlop={8} style={{ padding: 8 }} accessibilityRole="button" accessibilityLabel={lang === 'fa' ? 'شروع گفتگو' : 'Start chat'}><Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} /></Pressable>
+        </View>)}
         {foundUsers.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : t.noContacts}</Text>}
       </View>
     </>
@@ -1134,6 +1238,25 @@ function AppContent() {
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="moon-outline" size={20} color={c.primary} /></View>
           <Text style={[styles.settingLabel, { color: c.text }]}>{t.dark}</Text>
           <Switch value={dark} onValueChange={v => setTheme(v ? 'dark' : 'light')} trackColor={{ true: c.primary, false: c.border }} />
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'flex-start' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="color-palette-outline" size={20} color={c.primary} /></View>
+          <View style={{ flex: 1, gap: 10 }}>
+            <Text style={[styles.settingLabel, { color: c.text }]}>{lang === 'fa' ? 'رنگ اصلی برنامه' : 'Accent color'}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {([{key:'violet',color:'#8B7CFF'},{key:'blue',color:'#3D7EFF'},{key:'cyan',color:'#00B8D9'},{key:'rose',color:'#F06B9A'},{key:'green',color:'#27B98A'},{key:'amber',color:'#E6A23C'}] as const).map(item => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.key} onPress={() => setAccentPreset(item.key)} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: item.color, alignItems: 'center', justifyContent: 'center', borderWidth: accentPreset === item.key ? 3 : 1, borderColor: accentPreset === item.key ? c.text : '#FFFFFF55' }}>{accentPreset === item.key && <Ionicons name="checkmark" size={15} color="#FFFFFF" />}</Pressable>)}
+            </View>
+          </View>
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="chatbox-ellipses-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text, flex: 1 }]}>{lang === 'fa' ? 'چیدمان مینیمال پیام‌ها' : 'Compact message layout'}</Text>
+          <Switch value={compactMessages} onValueChange={setCompactMessages} trackColor={{ true: c.primary, false: c.border }} />
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="sparkles-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text, flex: 1 }]}>{lang === 'fa' ? 'انیمیشن‌های نرم' : 'Smooth animations'}</Text>
+          <Switch value={motionEnabled} onValueChange={setMotionEnabled} trackColor={{ true: c.primary, false: c.border }} />
         </View>
         <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="language-outline" size={20} color={c.primary} /></View>
@@ -1269,7 +1392,7 @@ function AppContent() {
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'userProfile' ? (lang === 'fa' ? 'اطلاعات کاربر' : 'User profile') : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom && activeRoom.kind !== 'direct' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
@@ -1301,7 +1424,7 @@ function AppContent() {
               <ScrollView style={{ maxHeight: '65%' }} keyboardShouldPersistTaps="handled">
                 {messageSearchResults.map(message => <Pressable key={message.id} onPress={() => { setModal('chat'); }} style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 4 }}>
                   <Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>
-                  <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                  <Text style={{ color: c.text, fontSize: compactMessages ? 12 : 13, lineHeight: compactMessages ? 17 : 20 }}>{message.body}</Text>
                   <Text style={{ color: c.muted, fontSize: 10 }}>{message.createdAt}</Text>
                 </Pressable>)}
                 {messageSearchResults.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : (lang === 'fa' ? 'نتیجه‌ای پیدا نشد.' : 'No results found.')}</Text>}
@@ -1366,6 +1489,14 @@ function AppContent() {
               <TextInput value={displayName} onChangeText={setDisplayName} placeholder={t.displayName} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={40} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.username}</Text>
               <TextInput value={username} onChangeText={v => setUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24))} autoCapitalize="none" placeholder="username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'وب‌سایت (اختیاری)' : 'Website (optional)'}</Text>
+              <TextInput value={websiteUrl} onChangeText={setWebsiteUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://example.com" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Instagram</Text>
+              <TextInput value={instagramUrl} onChangeText={setInstagramUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://instagram.com/username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Telegram</Text>
+              <TextInput value={telegramUrl} onChangeText={setTelegramUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://t.me/username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>YouTube</Text>
+              <TextInput value={youtubeUrl} onChangeText={setYoutubeUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://youtube.com/@username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.birthday}</Text>
               <TextInput value={birthYear} onChangeText={v => setBirthYear(v.replace(/[^0-9]/g, '').slice(0, 4))} keyboardType="number-pad" placeholder={calendar === 'solar' ? 'مثلاً ۱۳۹۰' : 'مثلاً 2011'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.calendar}</Text>
@@ -1374,6 +1505,27 @@ function AppContent() {
               </View>
               <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
+            </> : modal === 'userProfile' ? <>
+              <ScrollView style={{ maxHeight: '78%' }} contentContainerStyle={{ alignItems: 'center', paddingVertical: 12, gap: 10 }} keyboardShouldPersistTaps="handled">
+                <Avatar icon="person" color={c.primary} size={94} uri={selectedProfile?.avatarUrl ?? null} />
+                <Text style={{ color: c.text, fontSize: 22, fontWeight: '900' }}>{selectedProfile?.displayName || selectedProfile?.username || (lang === 'fa' ? 'کاربر' : 'User')}</Text>
+                {!!selectedProfile?.username && <Text style={{ color: c.primary, fontSize: 13, fontWeight: '700' }}>@{selectedProfile.username}</Text>}
+                {profileLoading && <Text style={{ color: c.muted, fontSize: 11 }}>{lang === 'fa' ? 'در حال دریافت اطلاعات…' : 'Loading profile…'}</Text>}
+                {!!selectedProfile?.birthYear && <Text style={{ color: c.muted, fontSize: 12 }}>{lang === 'fa' ? 'سال تولد: ' : 'Birth year: '}{selectedProfile.birthYear}</Text>}
+                {([
+                  { label: 'Website', url: selectedProfile?.websiteUrl, icon: 'globe-outline' },
+                  { label: 'Instagram', url: selectedProfile?.instagramUrl, icon: 'logo-instagram' },
+                  { label: 'Telegram', url: selectedProfile?.telegramUrl, icon: 'paper-plane-outline' },
+                  { label: 'YouTube', url: selectedProfile?.youtubeUrl, icon: 'logo-youtube' }
+                ] as const).filter(item => !!item.url).map(item => <Pressable key={item.label} onPress={() => { const url = item.url; if (url && /^https:\/\//i.test(url)) void Linking.openURL(url).catch(() => showAlert(lang === 'fa' ? 'باز کردن پیوند ممکن نشد.' : 'Could not open link.')); }} style={{ width: '100%', flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 10, padding: 13, borderRadius: 14, backgroundColor: c.input, borderWidth: 1, borderColor: c.border }}>
+                    <Ionicons name={item.icon as any} size={19} color={c.primary} />
+                    <Text style={{ flex: 1, color: c.text, textAlign: isRTL ? 'right' : 'left' }}>{item.label}</Text>
+                    <Ionicons name="open-outline" size={16} color={c.muted} />
+                  </Pressable>)}
+                {!profileLoading && !selectedProfile?.websiteUrl && !selectedProfile?.instagramUrl && !selectedProfile?.telegramUrl && !selectedProfile?.youtubeUrl && <Text style={{ color: c.muted, fontSize: 12, marginTop: 8 }}>{lang === 'fa' ? 'این کاربر پیوند عمومی ثبت نکرده است.' : 'This user has not added public links.'}</Text>}
+                <Pressable onPress={() => { if (selectedProfile) void startDirectChat(selectedProfile); }} style={[styles.modalPrimary, { backgroundColor: c.primary, width: '100%', marginTop: 8 }]}><Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFF" /><Text style={styles.primaryButtonText}>{lang === 'fa' ? 'ارسال پیام' : 'Message'}</Text></Pressable>
+              </ScrollView>
+              <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'chat' ? <>
               {selectedMessageIds.length > 0 && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: 14, backgroundColor: c.soft, marginTop: 6 }}>
                 <Text style={{ color: c.primary, fontSize: 11, fontWeight: '900' }}>{selectedMessageIds.length} {lang === 'fa' ? 'پیام انتخاب شده' : 'selected'}</Text>
@@ -1386,15 +1538,15 @@ function AppContent() {
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
-                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
+                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: compactMessages ? 4 : 7 }}>
+                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={compactMessages ? 24 : 30} uri={message.avatarUrl ?? null} />
                     <View style={{ maxWidth: '88%' }}>
-                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text>
-                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
+                      <Pressable onPress={() => { void openUserProfile({ id: message.senderId, username: message.username, displayName: message.displayName || message.username, avatarUrl: message.avatarUrl ?? null }); }} hitSlop={5} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', marginBottom: 3 }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: compactMessages ? 12 : 14, paddingHorizontal: compactMessages ? 10 : 12, paddingVertical: compactMessages ? 6 : 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
-                        {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
-                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />}
+                        {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void (file.mimeType.startsWith('audio/') ? playVoiceAttachment(file.url, file.name) : openAttachment(file.url, file.name)); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
+                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : file.mimeType.startsWith('audio/') ? 'play-circle-outline' : 'document-outline'} size={22} color={c.primary} />}
                           <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}
@@ -1424,15 +1576,19 @@ function AppContent() {
                 <Text style={{ color: c.primary, fontSize: 11, flex: 1 }}>{editingMessageId ? (lang === 'fa' ? 'ویرایش پیام' : 'Editing message') : (lang === 'fa' ? 'پاسخ به: ' + (replyingTo?.displayName ?? '') : 'Reply to: ' + (replyingTo?.displayName ?? ''))}</Text>
                 <Pressable onPress={() => { setReplyingTo(null); setEditingMessageId(null); setMessageDraft(''); }}><Ionicons name="close-circle" size={18} color={c.muted} /></Pressable>
               </View>}
+              <Animated.View style={{ transform: [{ translateY: composerLift.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }] }}>
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                 <Pressable disabled={busy} onPress={() => { void pickMediaForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="image-outline" size={20} color={c.primary} /></Pressable>
+                <Pressable disabled={busy} onPress={() => { void toggleVoiceRecording(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: voiceRecording ? '#E34E6830' : c.soft }} accessibilityRole="button" accessibilityLabel={voiceRecording ? (lang === 'fa' ? 'توقف و ارسال ویس' : 'Stop and send voice note') : (lang === 'fa' ? 'ضبط ویس' : 'Record voice note')}><Ionicons name={voiceRecording ? 'stop-circle' : 'mic-outline'} size={20} color={voiceRecording ? '#E34E68' : c.primary} /></Pressable>
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
                 <View style={{ flex: 1 }}>
+                  {!!voiceRecording && <Text style={{ color: '#E34E68', fontSize: 10, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'در حال ضبط ویس… برای ارسال دوباره روی توقف بزن' : 'Recording voice… tap stop to send'}</Text>}
                   {!!messageDraft.trim() && !editingMessageId && <Text style={{ color: c.muted, fontSize: 9, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'پیش‌نویس به‌صورت خودکار ذخیره می‌شود' : 'Draft saved automatically'}</Text>}
                   <TextInput value={messageDraft} onChangeText={setMessageDraft} returnKeyType="send" blurOnSubmit={true} onSubmitEditing={() => { void submitMessage(); }} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
                 </View>
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>
+              </Animated.View>
             </> : <>
               <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                 {(['login', 'register'] as const).map(mode => <Pressable key={mode} onPress={() => setLoginMode(mode)} style={[styles.authModeItem, loginMode === mode && { backgroundColor: c.primary }]}><Text style={{ color: loginMode === mode ? '#FFF' : c.muted, fontWeight: '800' }}>{mode === 'login' ? (lang === 'fa' ? 'ورود' : 'Sign in') : (lang === 'fa' ? 'ثبت‌نام' : 'Sign up')}</Text></Pressable>)}

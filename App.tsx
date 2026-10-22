@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View, Keyboard } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, getUserProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -89,6 +89,7 @@ function Text(props: React.ComponentProps<typeof NativeText>) {
 
 type Language = 'fa' | 'en';
 type ThemeMode = 'light' | 'dark';
+type AccentPreset = 'violet' | 'blue' | 'cyan' | 'rose' | 'green' | 'amber';
 type Tab = 'chats' | 'contacts' | 'groups' | 'channels' | 'saved' | 'settings';
 type SavedMessage = VatanMessage & { savedAt: string };
 type Room = { id: string; title: string; subtitle: string; icon: string; kind: 'group' | 'channel' | 'direct'; role?: 'owner' | 'admin' | 'member' | 'subscriber'; avatarUrl?: string | null };
@@ -138,17 +139,27 @@ function AppContent() {
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
+  const composerLift = useRef(new Animated.Value(0)).current;
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [accentPreset, setAccentPreset] = useState<AccentPreset>('violet');
+  const [compactMessages, setCompactMessages] = useState(false);
+  const [motionEnabled, setMotionEnabled] = useState(true);
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [instagramUrl, setInstagramUrl] = useState('');
+  const [telegramUrl, setTelegramUrl] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState<VatanUser | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('chats');
   const [displayName, setDisplayName] = useState('هیراد');
   const [username, setUsername] = useState('hirad');
   const [birthYear, setBirthYear] = useState('');
   const [calendar, setCalendar] = useState<'solar' | 'gregorian'>('solar');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | null>(null);
+  const [modal, setModal] = useState<'group' | 'channel' | 'profile' | 'login' | 'chat' | 'groupSettings' | 'searchMessages' | 'forward' | 'userProfile' | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDescription, setRoomDescription] = useState('');
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -212,12 +223,13 @@ function AppContent() {
     }
   };
   const dark = theme === 'dark';
+  const accent = ({ violet: '#8B7CFF', blue: '#3D7EFF', cyan: '#00B8D9', rose: '#F06B9A', green: '#27B98A', amber: '#E6A23C' } as Record<AccentPreset, string>)[accentPreset];
   const c = dark ? {
     bg: '#080D1A', surface: '#10182A', card: '#151F35', text: '#F5F7FF', muted: '#9AA8C2',
-    border: '#26334E', primary: '#8B7CFF', soft: '#24264A', input: '#0C1425'
+    border: '#26334E', primary: accent, soft: accent + '2E', input: '#0C1425'
   } : {
     bg: '#F4F5FC', surface: '#FFFFFF', card: '#FFFFFF', text: '#171A32', muted: '#747D96',
-    border: '#E5E7F2', primary: '#635BEE', soft: '#EFEDFF', input: '#F7F7FC'
+    border: '#E5E7F2', primary: accent, soft: accent + '20', input: '#F7F7FC'
   };
   const isRTL = lang === 'fa';
 
@@ -229,10 +241,13 @@ function AppContent() {
         if (!cancelled && raw) {
           const parsed: unknown = JSON.parse(raw);
           if (parsed && typeof parsed === 'object') {
-            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown };
+            const prefs = parsed as { theme?: unknown; lang?: unknown; notificationsEnabled?: unknown; accentPreset?: unknown; compactMessages?: unknown; motionEnabled?: unknown };
             if (prefs.theme === 'light' || prefs.theme === 'dark') setTheme(prefs.theme);
             if (prefs.lang === 'fa' || prefs.lang === 'en') setLang(prefs.lang);
             if (typeof prefs.notificationsEnabled === 'boolean') setNotificationsEnabled(prefs.notificationsEnabled);
+            if (['violet','blue','cyan','rose','green','amber'].includes(String(prefs.accentPreset))) setAccentPreset(prefs.accentPreset as AccentPreset);
+            if (typeof prefs.compactMessages === 'boolean') setCompactMessages(prefs.compactMessages);
+            if (typeof prefs.motionEnabled === 'boolean') setMotionEnabled(prefs.motionEnabled);
           }
         }
       } catch { /* Keep defaults when preferences are unavailable. */ }
@@ -244,8 +259,8 @@ function AppContent() {
 
   useEffect(() => {
     if (!appPrefsReady) return;
-    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled })).catch(() => undefined);
-  }, [theme, lang, notificationsEnabled, appPrefsReady]);
+    void AsyncStorage.setItem(APP_PREFS_KEY, JSON.stringify({ theme, lang, notificationsEnabled, accentPreset, compactMessages, motionEnabled })).catch(() => undefined);
+  }, [theme, lang, notificationsEnabled, accentPreset, compactMessages, motionEnabled, appPrefsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,13 +336,13 @@ function AppContent() {
   }, [messageDraft, activeRoom?.id, savedDataReady, editingMessageId]);
 
   useEffect(() => {
-    Animated.timing(heroMotion, { toValue: 1, duration: 900, useNativeDriver: true }).start();
+    Animated.timing(heroMotion, { toValue: 1, duration: motionEnabled ? 900 : 0, useNativeDriver: true }).start();
   }, [heroMotion]);
 
   useEffect(() => {
-    tabMotion.setValue(0);
+    tabMotion.setValue(motionEnabled ? 0 : 1);
     Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
-  }, [tab, tabMotion]);
+  }, [tab, tabMotion, motionEnabled]);
 
   // Refresh conversation membership so newly invited group members see the room.
   useEffect(() => {
@@ -436,6 +451,7 @@ function AppContent() {
         setUsername(user.username);
         setDisplayName(user.displayName);
         setPhoto(user.avatarUrl);
+        setWebsiteUrl(user.websiteUrl ?? ''); setInstagramUrl(user.instagramUrl ?? ''); setTelegramUrl(user.telegramUrl ?? ''); setYoutubeUrl(user.youtubeUrl ?? '');
         setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
         setCalendar(user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
         setRooms(conversations.conversations.map(item => ({
@@ -476,6 +492,7 @@ function AppContent() {
       setUsername(result.user.username);
       setDisplayName(result.user.displayName);
       setPhoto(result.user.avatarUrl);
+      setWebsiteUrl(result.user.websiteUrl ?? ''); setInstagramUrl(result.user.instagramUrl ?? ''); setTelegramUrl(result.user.telegramUrl ?? ''); setYoutubeUrl(result.user.youtubeUrl ?? '');
       setBirthYear(result.user.birthYear == null ? '' : String(result.user.birthYear));
       setCalendar(result.user.birthCalendar === 'gregorian' ? 'gregorian' : 'solar');
       await loadConversations(result.token);
@@ -576,9 +593,14 @@ function AppContent() {
         username: username.trim(),
         birthYear: parsedYear,
         birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian',
-        ...(savedAvatarUrl !== undefined ? { avatarUrl: savedAvatarUrl } : {})
+        ...(savedAvatarUrl !== undefined ? { avatarUrl: savedAvatarUrl } : {}),
+        websiteUrl: websiteUrl.trim() || null,
+        instagramUrl: instagramUrl.trim() || null,
+        telegramUrl: telegramUrl.trim() || null,
+        youtubeUrl: youtubeUrl.trim() || null
       });
       setPhoto(user.avatarUrl);
+      setWebsiteUrl(user.websiteUrl ?? ''); setInstagramUrl(user.instagramUrl ?? ''); setTelegramUrl(user.telegramUrl ?? ''); setYoutubeUrl(user.youtubeUrl ?? '');
       setDisplayName(user.displayName);
       setUsername(user.username);
       setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
@@ -591,6 +613,16 @@ function AppContent() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const openUserProfile = async (person: Pick<VatanUser, 'username' | 'displayName' | 'avatarUrl' | 'id'>) => {
+    setSelectedProfile({ ...person, birthYear: null, birthCalendar: null });
+    setModal('userProfile');
+    if (!apiToken || !person.username) return;
+    setProfileLoading(true);
+    try { setSelectedProfile(await getUserProfile(apiToken, person.username)); }
+    catch (error) { showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'نمایش پروفایل ممکن نشد.' : 'Could not load profile.')); }
+    finally { setProfileLoading(false); }
   };
 
   const searchForUsers = async () => {
@@ -924,6 +956,14 @@ function AppContent() {
       clearInterval(timer);
     };
   }, [modal, apiToken, activeRoom?.id]);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, () => Animated.spring(composerLift, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 2 }).start());
+    const hide = Keyboard.addListener(hideEvent, () => Animated.spring(composerLift, { toValue: 0, useNativeDriver: true, speed: 24, bounciness: 2 }).start());
+    return () => { show.remove(); hide.remove(); };
+  }, [composerLift]);
+
   const labelForTab = (x: Tab) => x === 'saved' ? t.savedTab : t[x as Exclude<Tab, 'saved'>];
   const canManageGroup = groupMembers.some(member => member.id === userId && ['owner', 'admin'].includes(member.role));
   const groupAccent = ({ violet: '#5B52E8', blue: '#2878E8', green: '#159A73', rose: '#E34E86', amber: '#D98B16', midnight: '#202B45', ocean: '#008DA8' } as Record<string, string>)[groupSettings?.themeKey ?? 'violet'] ?? c.primary;

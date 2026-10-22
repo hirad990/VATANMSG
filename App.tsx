@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -565,12 +565,20 @@ function AppContent() {
     }
     setBusy(true);
     try {
+      // Upload a newly selected local image first. Remote URLs are already saved avatars.
+      let savedAvatarUrl = photo;
+      if (photo && !/^https:\/\//i.test(photo)) {
+        const uploadedUser = await uploadProfilePhoto(apiToken, photo);
+        savedAvatarUrl = uploadedUser.avatarUrl;
+      }
       const user = await updateMyProfile(apiToken, {
         displayName: displayName.trim(),
         username: username.trim(),
         birthYear: parsedYear,
-        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian'
+        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian',
+        ...(savedAvatarUrl !== undefined ? { avatarUrl: savedAvatarUrl } : {})
       });
+      setPhoto(user.avatarUrl);
       setDisplayName(user.displayName);
       setUsername(user.username);
       setBirthYear(user.birthYear == null ? '' : String(user.birthYear));

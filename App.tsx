@@ -15,6 +15,7 @@ import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiB
 import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, getUserProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 
 
 if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -140,6 +141,7 @@ function AppContent() {
   const tabMotion = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
   const composerLift = useRef(new Animated.Value(0)).current;
+  const voiceSoundRef = useRef<Audio.Sound | null>(null);
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
@@ -187,6 +189,7 @@ function AppContent() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, { reaction: string; count: number }[]>>({});
   const [busy, setBusy] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState<Audio.Recording | null>(null);
   const [saved, setSaved] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'direct' | 'group' | 'channel' | 'pinned'>('all');
   const [pinnedRoomIds, setPinnedRoomIds] = useState<string[]>([]);
@@ -827,6 +830,56 @@ function AppContent() {
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Upload failed.');
     } finally { setBusy(false); }
+  };
+
+  const toggleVoiceRecording = async () => {
+    if (!apiToken || !activeRoom) { showAlert(lang === 'fa' ? 'برای ارسال ویس ابتدا وارد حساب شو و یک گفتگو باز کن.' : 'Sign in and open a chat before recording.'); return; }
+    if (voiceRecording) {
+      const recording = voiceRecording;
+      setVoiceRecording(null);
+      try {
+        await recording.stopAndUnloadAsync();
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        const uri = recording.getURI();
+        if (!uri) throw new Error('Recording file was not created.');
+        await uploadFileToRoom({ uri, name: 'voice-note.m4a', type: 'audio/mp4' });
+      } catch (error) {
+        showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'ارسال ویس ناموفق بود.' : 'Could not send voice note.'));
+      }
+      return;
+    }
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) { showAlert(lang === 'fa' ? 'برای ضبط ویس اجازه میکروفون لازم است.' : 'Microphone permission is required to record voice notes.'); return; }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const result = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setVoiceRecording(result.recording);
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'ضبط ویس شروع نشد.' : 'Could not start recording.'));
+    }
+  };
+
+  const playVoiceAttachment = async (url: string, name: string) => {
+    if (!apiToken) return;
+    try {
+      if (voiceSoundRef.current) {
+        await voiceSoundRef.current.unloadAsync().catch(() => undefined);
+        voiceSoundRef.current = null;
+      }
+      const safeName = name.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80) || 'voice-note.m4a';
+      const destination = (FileSystem.cacheDirectory || '') + safeName;
+      const download = await FileSystem.downloadAsync(url, destination, { headers: { Authorization: `Bearer ${apiToken}` } });
+      const created = await Audio.Sound.createAsync({ uri: download.uri }, { shouldPlay: true });
+      voiceSoundRef.current = created.sound;
+      created.sound.setOnPlaybackStatusUpdate(status => {
+        if (status.isLoaded && status.didJustFinish) {
+          void created.sound.unloadAsync().catch(() => undefined);
+          if (voiceSoundRef.current === created.sound) voiceSoundRef.current = null;
+        }
+      });
+    } catch (error) {
+      showAlert(error instanceof Error ? error.message : (lang === 'fa' ? 'پخش ویس ممکن نشد.' : 'Could not play voice note.'));
+    }
   };
 
   const pickMediaForChat = async () => {
@@ -1492,8 +1545,8 @@ function AppContent() {
                       <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: compactMessages ? 12 : 14, paddingHorizontal: compactMessages ? 10 : 12, paddingVertical: compactMessages ? 6 : 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
-                        {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
-                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />}
+                        {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void (file.mimeType.startsWith('audio/') ? playVoiceAttachment(file.url, file.name) : openAttachment(file.url, file.name)); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
+                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : file.mimeType.startsWith('audio/') ? 'play-circle-outline' : 'document-outline'} size={22} color={c.primary} />}
                           <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}
@@ -1526,8 +1579,10 @@ function AppContent() {
               <Animated.View style={{ transform: [{ translateY: composerLift.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }] }}>
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                 <Pressable disabled={busy} onPress={() => { void pickMediaForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="image-outline" size={20} color={c.primary} /></Pressable>
+                <Pressable disabled={busy} onPress={() => { void toggleVoiceRecording(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: voiceRecording ? '#E34E6830' : c.soft }} accessibilityRole="button" accessibilityLabel={voiceRecording ? (lang === 'fa' ? 'توقف و ارسال ویس' : 'Stop and send voice note') : (lang === 'fa' ? 'ضبط ویس' : 'Record voice note')}><Ionicons name={voiceRecording ? 'stop-circle' : 'mic-outline'} size={20} color={voiceRecording ? '#E34E68' : c.primary} /></Pressable>
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
                 <View style={{ flex: 1 }}>
+                  {!!voiceRecording && <Text style={{ color: '#E34E68', fontSize: 10, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'در حال ضبط ویس… برای ارسال دوباره روی توقف بزن' : 'Recording voice… tap stop to send'}</Text>}
                   {!!messageDraft.trim() && !editingMessageId && <Text style={{ color: c.muted, fontSize: 9, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'پیش‌نویس به‌صورت خودکار ذخیره می‌شود' : 'Draft saved automatically'}</Text>}
                   <TextInput value={messageDraft} onChangeText={setMessageDraft} returnKeyType="send" blurOnSubmit={true} onSubmitEditing={() => { void submitMessage(); }} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیامت را بنویس…' : 'Write a message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left', maxHeight: 90, marginBottom: 0 }]} />
                 </View>

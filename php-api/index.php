@@ -1250,6 +1250,9 @@ function api_upload_media(): never
     $extensions = [
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
         'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov',
+        'audio/mp4' => 'm4a', 'audio/x-m4a' => 'm4a', 'audio/mpeg' => 'mp3',
+        'audio/aac' => 'aac', 'audio/wav' => 'wav', 'audio/x-wav' => 'wav',
+        'audio/ogg' => 'ogg', 'audio/webm' => 'webm',
         'application/pdf' => 'pdf', 'text/plain' => 'txt', 'application/zip' => 'zip',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',

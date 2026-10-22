@@ -1135,7 +1135,10 @@ function AppContent() {
       <View style={[styles.listCard, { backgroundColor: c.surface, marginTop: 16 }]}>
         {foundUsers.map(person => <Pressable key={person.id} onPress={() => { void startDirectChat(person); }} style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border }]}>
           <Avatar icon="person" color={c.primary} uri={person.avatarUrl} />
-          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></View>
+          <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+            <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatTitle, { color: c.text }]}>{person.displayName}</Text></Pressable>
+            <Pressable onPress={() => { void openUserProfile(person); }} hitSlop={6}><Text style={[styles.chatSubtitle, { color: c.muted }]}>@{person.username}</Text></Pressable>
+          </View>
           <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.primary} />
         </Pressable>)}
         {foundUsers.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : t.noContacts}</Text>}
@@ -1182,6 +1185,25 @@ function AppContent() {
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="moon-outline" size={20} color={c.primary} /></View>
           <Text style={[styles.settingLabel, { color: c.text }]}>{t.dark}</Text>
           <Switch value={dark} onValueChange={v => setTheme(v ? 'dark' : 'light')} trackColor={{ true: c.primary, false: c.border }} />
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'flex-start' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="color-palette-outline" size={20} color={c.primary} /></View>
+          <View style={{ flex: 1, gap: 10 }}>
+            <Text style={[styles.settingLabel, { color: c.text }]}>{lang === 'fa' ? 'رنگ اصلی برنامه' : 'Accent color'}</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+              {([{key:'violet',color:'#8B7CFF'},{key:'blue',color:'#3D7EFF'},{key:'cyan',color:'#00B8D9'},{key:'rose',color:'#F06B9A'},{key:'green',color:'#27B98A'},{key:'amber',color:'#E6A23C'}] as const).map(item => <Pressable key={item.key} accessibilityRole="button" accessibilityLabel={item.key} onPress={() => setAccentPreset(item.key)} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: item.color, alignItems: 'center', justifyContent: 'center', borderWidth: accentPreset === item.key ? 3 : 1, borderColor: accentPreset === item.key ? c.text : '#FFFFFF55' }}>{accentPreset === item.key && <Ionicons name="checkmark" size={15} color="#FFFFFF" />}</Pressable>)}
+            </View>
+          </View>
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="chatbox-ellipses-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text, flex: 1 }]}>{lang === 'fa' ? 'چیدمان مینیمال پیام‌ها' : 'Compact message layout'}</Text>
+          <Switch value={compactMessages} onValueChange={setCompactMessages} trackColor={{ true: c.primary, false: c.border }} />
+        </View>
+        <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+          <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="sparkles-outline" size={20} color={c.primary} /></View>
+          <Text style={[styles.settingLabel, { color: c.text, flex: 1 }]}>{lang === 'fa' ? 'انیمیشن‌های نرم' : 'Smooth animations'}</Text>
+          <Switch value={motionEnabled} onValueChange={setMotionEnabled} trackColor={{ true: c.primary, false: c.border }} />
         </View>
         <View style={[styles.settingRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
           <View style={[styles.settingIcon, { backgroundColor: c.soft }]}><Ionicons name="language-outline" size={20} color={c.primary} /></View>
@@ -1317,7 +1339,7 @@ function AppContent() {
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
             <View style={[styles.modalHandle, { backgroundColor: c.border }]} />
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
-              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
+              <Text style={[styles.modalTitle, { color: c.text }]}>{modal === 'forward' ? (lang === 'fa' ? 'انتقال پیام‌ها' : 'Forward messages') : modal === 'group' ? t.newGroup : modal === 'channel' ? t.newChannel : modal === 'profile' ? t.editProfile : modal === 'userProfile' ? (lang === 'fa' ? 'اطلاعات کاربر' : 'User profile') : modal === 'groupSettings' ? (activeRoom?.kind === 'channel' ? (lang === 'fa' ? 'تنظیمات کانال' : 'Channel settings') : (lang === 'fa' ? 'تنظیمات گروه' : 'Group settings')) : modal === 'searchMessages' ? (lang === 'fa' ? 'جست‌وجوی پیام‌ها' : 'Search messages') : modal === 'chat' ? (activeRoom?.title ?? t.chats) : t.phone}</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom && activeRoom.kind !== 'direct' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
@@ -1349,7 +1371,7 @@ function AppContent() {
               <ScrollView style={{ maxHeight: '65%' }} keyboardShouldPersistTaps="handled">
                 {messageSearchResults.map(message => <Pressable key={message.id} onPress={() => { setModal('chat'); }} style={{ paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border, gap: 4 }}>
                   <Text style={{ color: c.primary, fontSize: 11, fontWeight: '800' }}>{message.displayName} · @{message.username}</Text>
-                  <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
+                  <Text style={{ color: c.text, fontSize: compactMessages ? 12 : 13, lineHeight: compactMessages ? 17 : 20 }}>{message.body}</Text>
                   <Text style={{ color: c.muted, fontSize: 10 }}>{message.createdAt}</Text>
                 </Pressable>)}
                 {messageSearchResults.length === 0 && <Text style={[styles.emptyHint, { color: c.muted }]}>{busy ? '…' : (lang === 'fa' ? 'نتیجه‌ای پیدا نشد.' : 'No results found.')}</Text>}
@@ -1414,6 +1436,14 @@ function AppContent() {
               <TextInput value={displayName} onChangeText={setDisplayName} placeholder={t.displayName} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} maxLength={40} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.username}</Text>
               <TextInput value={username} onChangeText={v => setUsername(v.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24))} autoCapitalize="none" placeholder="username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>{lang === 'fa' ? 'وب‌سایت (اختیاری)' : 'Website (optional)'}</Text>
+              <TextInput value={websiteUrl} onChangeText={setWebsiteUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://example.com" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Instagram</Text>
+              <TextInput value={instagramUrl} onChangeText={setInstagramUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://instagram.com/username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>Telegram</Text>
+              <TextInput value={telegramUrl} onChangeText={setTelegramUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://t.me/username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
+              <Text style={[styles.fieldLabel, { color: c.muted }]}>YouTube</Text>
+              <TextInput value={youtubeUrl} onChangeText={setYoutubeUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://youtube.com/@username" placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: 'left' }]} maxLength={255} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.birthday}</Text>
               <TextInput value={birthYear} onChangeText={v => setBirthYear(v.replace(/[^0-9]/g, '').slice(0, 4))} keyboardType="number-pad" placeholder={calendar === 'solar' ? 'مثلاً ۱۳۹۰' : 'مثلاً 2011'} placeholderTextColor={c.muted} style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, textAlign: isRTL ? 'right' : 'left' }]} />
               <Text style={[styles.fieldLabel, { color: c.muted }]}>{t.calendar}</Text>
@@ -1422,6 +1452,27 @@ function AppContent() {
               </View>
               <Pressable disabled={busy} onPress={() => { void saveProfile(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, opacity: busy ? 0.6 : 1 }]}><Text style={styles.primaryButtonText}>{busy ? '…' : t.save}</Text></Pressable>
               <Text style={[styles.demoNote, { color: c.muted }]}>{t.privateNote}</Text>
+            </> : modal === 'userProfile' ? <>
+              <ScrollView style={{ maxHeight: '78%' }} contentContainerStyle={{ alignItems: 'center', paddingVertical: 12, gap: 10 }} keyboardShouldPersistTaps="handled">
+                <Avatar icon="person" color={c.primary} size={94} uri={selectedProfile?.avatarUrl ?? null} />
+                <Text style={{ color: c.text, fontSize: 22, fontWeight: '900' }}>{selectedProfile?.displayName || selectedProfile?.username || (lang === 'fa' ? 'کاربر' : 'User')}</Text>
+                {!!selectedProfile?.username && <Text style={{ color: c.primary, fontSize: 13, fontWeight: '700' }}>@{selectedProfile.username}</Text>}
+                {profileLoading && <Text style={{ color: c.muted, fontSize: 11 }}>{lang === 'fa' ? 'در حال دریافت اطلاعات…' : 'Loading profile…'}</Text>}
+                {!!selectedProfile?.birthYear && <Text style={{ color: c.muted, fontSize: 12 }}>{lang === 'fa' ? 'سال تولد: ' : 'Birth year: '}{selectedProfile.birthYear}</Text>}
+                {([
+                  { label: 'Website', url: selectedProfile?.websiteUrl, icon: 'globe-outline' },
+                  { label: 'Instagram', url: selectedProfile?.instagramUrl, icon: 'logo-instagram' },
+                  { label: 'Telegram', url: selectedProfile?.telegramUrl, icon: 'paper-plane-outline' },
+                  { label: 'YouTube', url: selectedProfile?.youtubeUrl, icon: 'logo-youtube' }
+                ] as const).filter(item => !!item.url).map(item => <Pressable key={item.label} onPress={() => { const url = item.url; if (url && /^https:\/\//i.test(url)) void Linking.openURL(url).catch(() => showAlert(lang === 'fa' ? 'باز کردن پیوند ممکن نشد.' : 'Could not open link.')); }} style={{ width: '100%', flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 10, padding: 13, borderRadius: 14, backgroundColor: c.input, borderWidth: 1, borderColor: c.border }}>
+                    <Ionicons name={item.icon as any} size={19} color={c.primary} />
+                    <Text style={{ flex: 1, color: c.text, textAlign: isRTL ? 'right' : 'left' }}>{item.label}</Text>
+                    <Ionicons name="open-outline" size={16} color={c.muted} />
+                  </Pressable>)}
+                {!profileLoading && !selectedProfile?.websiteUrl && !selectedProfile?.instagramUrl && !selectedProfile?.telegramUrl && !selectedProfile?.youtubeUrl && <Text style={{ color: c.muted, fontSize: 12, marginTop: 8 }}>{lang === 'fa' ? 'این کاربر پیوند عمومی ثبت نکرده است.' : 'This user has not added public links.'}</Text>}
+                <Pressable onPress={() => { if (selectedProfile) void startDirectChat(selectedProfile); }} style={[styles.modalPrimary, { backgroundColor: c.primary, width: '100%', marginTop: 8 }]}><Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFF" /><Text style={styles.primaryButtonText}>{lang === 'fa' ? 'ارسال پیام' : 'Message'}</Text></Pressable>
+              </ScrollView>
+              <Pressable onPress={() => setModal(null)} style={styles.cancelButton}><Text style={{ color: c.muted }}>{t.cancel}</Text></Pressable>
             </> : modal === 'chat' ? <>
               {selectedMessageIds.length > 0 && <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', justifyContent: 'space-between', padding: 10, borderRadius: 14, backgroundColor: c.soft, marginTop: 6 }}>
                 <Text style={{ color: c.primary, fontSize: 11, fontWeight: '900' }}>{selectedMessageIds.length} {lang === 'fa' ? 'پیام انتخاب شده' : 'selected'}</Text>
@@ -1434,11 +1485,11 @@ function AppContent() {
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
-                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 7 }}>
-                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={30} uri={message.avatarUrl ?? null} />
+                  return <View key={message.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '96%', flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: compactMessages ? 4 : 7 }}>
+                    <Avatar icon="person" color={mine ? c.primary : '#159A73'} size={compactMessages ? 24 : 30} uri={message.avatarUrl ?? null} />
                     <View style={{ maxWidth: '88%' }}>
-                      <Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', marginBottom: 3, textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text>
-                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
+                      <Pressable onPress={() => { void openUserProfile({ id: message.senderId, username: message.username, displayName: message.displayName || message.username, avatarUrl: message.avatarUrl ?? null }); }} hitSlop={5} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', marginBottom: 3 }}><Text style={{ color: c.primary, fontSize: 10, fontWeight: '800', textAlign: mine ? 'right' : 'left' }}>{message.displayName || message.username}{message.username ? ' · @' + message.username : ''}{message.username?.toLowerCase() === 'hirad990' && <Ionicons name="checkmark-circle" size={12} color="#2997FF" />}</Text></Pressable>
+                      <View style={{ backgroundColor: mine ? (activeRoom?.kind === 'group' ? groupAccent + '22' : c.soft) : c.input, borderRadius: compactMessages ? 12 : 14, paddingHorizontal: compactMessages ? 10 : 12, paddingVertical: compactMessages ? 6 : 9, borderWidth: activeRoom?.kind === 'group' ? 1 : 0, borderColor: activeRoom?.kind === 'group' ? groupAccent + '55' : 'transparent' }}>
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                         {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
@@ -1472,6 +1523,7 @@ function AppContent() {
                 <Text style={{ color: c.primary, fontSize: 11, flex: 1 }}>{editingMessageId ? (lang === 'fa' ? 'ویرایش پیام' : 'Editing message') : (lang === 'fa' ? 'پاسخ به: ' + (replyingTo?.displayName ?? '') : 'Reply to: ' + (replyingTo?.displayName ?? ''))}</Text>
                 <Pressable onPress={() => { setReplyingTo(null); setEditingMessageId(null); setMessageDraft(''); }}><Ionicons name="close-circle" size={18} color={c.muted} /></Pressable>
               </View>}
+              <Animated.View style={{ transform: [{ translateY: composerLift.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }] }}>
               <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                 <Pressable disabled={busy} onPress={() => { void pickMediaForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="image-outline" size={20} color={c.primary} /></Pressable>
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ padding: 8, borderRadius: 12, backgroundColor: c.soft }}><Ionicons name="attach-outline" size={20} color={c.primary} /></Pressable>
@@ -1481,6 +1533,7 @@ function AppContent() {
                 </View>
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={[styles.modalPrimary, { backgroundColor: c.primary, paddingHorizontal: 16, opacity: !messageDraft.trim() ? 0.55 : 1 }]}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={18} color="#FFF" /></Pressable>
               </View>
+              </Animated.View>
             </> : <>
               <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
                 {(['login', 'register'] as const).map(mode => <Pressable key={mode} onPress={() => setLoginMode(mode)} style={[styles.authModeItem, loginMode === mode && { backgroundColor: c.primary }]}><Text style={{ color: loginMode === mode ? '#FFF' : c.muted, fontWeight: '800' }}>{mode === 'login' ? (lang === 'fa' ? 'ورود' : 'Sign in') : (lang === 'fa' ? 'ثبت‌نام' : 'Sign up')}</Text></Pressable>)}

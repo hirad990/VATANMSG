@@ -70,6 +70,10 @@ jobs:
           Set-Content -Path $gradlePath -Value $g2 -NoNewline
       - name: Build release with gradlew.bat
         shell: pwsh
+        env:
+          VATAN_KEY_ALIAS: ${{ secrets.VATAN_KEY_ALIAS }}
+          VATAN_KEY_PASSWORD: ${{ secrets.VATAN_KEY_PASSWORD }}
+          VATAN_STORE_PASSWORD: ${{ secrets.VATAN_STORE_PASSWORD }}
         working-directory: android
         run: |
           .\gradlew.bat assembleRelease --no-daemon

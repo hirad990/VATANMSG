@@ -5,6 +5,10 @@ export type VatanUser = {
   avatarUrl: string | null;
   birthYear?: number | null;
   birthCalendar?: 'solar_hijri' | 'gregorian' | null;
+  websiteUrl?: string | null;
+  instagramUrl?: string | null;
+  telegramUrl?: string | null;
+  youtubeUrl?: string | null;
 };
 
 export type VatanConversation = {
@@ -76,7 +80,11 @@ function normalizeUser(value: any): VatanUser {
     displayName: String(user.displayName ?? user.display_name ?? ''),
     avatarUrl: user.avatarUrl ?? user.avatar_url ?? null,
     birthYear: user.birthYear ?? user.birth_year ?? null,
-    birthCalendar: user.birthCalendar ?? user.birth_calendar ?? null
+    birthCalendar: user.birthCalendar ?? user.birth_calendar ?? null,
+    websiteUrl: user.websiteUrl ?? user.website_url ?? null,
+    instagramUrl: user.instagramUrl ?? user.instagram_url ?? null,
+    telegramUrl: user.telegramUrl ?? user.telegram_url ?? null,
+    youtubeUrl: user.youtubeUrl ?? user.youtube_url ?? null
   };
 }
 
@@ -132,12 +140,21 @@ export async function getMyProfile(token: string): Promise<VatanUser> {
   return normalizeUser(await request<any>('/auth/me', token));
 }
 
+export async function getUserProfile(token: string, username: string): Promise<VatanUser> {
+  const result = await request<any>(`/users/profile?username=${encodeURIComponent(username)}`, token);
+  return normalizeUser(result.user ?? result);
+}
+
 export async function updateMyProfile(token: string, profile: {
   displayName?: string;
   username?: string;
   birthYear?: number | null;
   birthCalendar?: 'solar_hijri' | 'gregorian' | null;
   avatarUrl?: string | null;
+  websiteUrl?: string | null;
+  instagramUrl?: string | null;
+  telegramUrl?: string | null;
+  youtubeUrl?: string | null;
 }): Promise<VatanUser> {
   const result = await request<any>('/auth/profile', token, {
     method: 'PATCH',

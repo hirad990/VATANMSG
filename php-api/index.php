@@ -45,6 +45,25 @@ function api_method(string ...$allowed): void
     }
 }
 
+function api_get_user_profile(): never
+{
+    api_method('GET');
+    api_user(); // Profile details are available only to signed-in users.
+    $username = trim((string)($_GET['username'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_]{3,32}$/', $username)) {
+        api_response(['error' => 'Valid username required'], 422);
+    }
+    $stmt = api_db()->prepare(
+        'SELECT id, username, display_name, avatar_url, birth_year, birth_calendar,
+                website_url, instagram_url, telegram_url, youtube_url
+         FROM users WHERE username = ? LIMIT 1'
+    );
+    $stmt->execute([$username]);
+    $user = $stmt->fetch();
+    if (!$user) api_response(['error' => 'User not found'], 404);
+    api_response(['user' => api_public_user($user)]);
+}
+
 function api_search_users(): never
 {
     api_method('GET');
@@ -55,7 +74,7 @@ function api_search_users(): never
     }
     $like = '%' . addcslashes($query, '%_\\\\') . '%';
     $stmt = api_db()->prepare(
-        'SELECT id, username, display_name, avatar_url
+        'SELECT id, username, display_name, avatar_url, website_url, instagram_url, telegram_url, youtube_url
          FROM users
          WHERE id <> ? AND (username LIKE ? OR display_name LIKE ?)
          ORDER BY CASE WHEN username = ? THEN 0 ELSE 1 END, display_name ASC
@@ -69,6 +88,10 @@ function api_search_users(): never
             'username' => $row['username'],
             'displayName' => $row['display_name'],
             'avatarUrl' => $row['avatar_url'],
+            'websiteUrl' => $row['website_url'] ?? null,
+            'instagramUrl' => $row['instagram_url'] ?? null,
+            'telegramUrl' => $row['telegram_url'] ?? null,
+            'youtubeUrl' => $row['youtube_url'] ?? null,
         ];
     }
     api_response(['users' => $users]);
@@ -356,7 +379,8 @@ function api_user(): array
         api_response(['error' => 'Authentication required'], 401);
     }
     $stmt = api_db()->prepare(
-        'SELECT u.id, u.username, u.display_name, u.avatar_url, u.birth_year, u.birth_calendar
+        'SELECT u.id, u.username, u.display_name, u.avatar_url, u.birth_year, u.birth_calendar,
+                u.website_url, u.instagram_url, u.telegram_url, u.youtube_url
          FROM api_tokens t JOIN users u ON u.id = t.user_id
          WHERE t.token_hash = ? AND t.expires_at > UTC_TIMESTAMP() LIMIT 1'
     );
@@ -377,6 +401,10 @@ function api_public_user(array $user): array
         'avatarUrl' => $user['avatar_url'] ?? null,
         'birthYear' => isset($user['birth_year']) ? ($user['birth_year'] === null ? null : (int)$user['birth_year']) : null,
         'birthCalendar' => $user['birth_calendar'] ?? null,
+        'websiteUrl' => $user['website_url'] ?? null,
+        'instagramUrl' => $user['instagram_url'] ?? null,
+        'telegramUrl' => $user['telegram_url'] ?? null,
+        'youtubeUrl' => $user['youtube_url'] ?? null,
     ];
 }
 
@@ -421,7 +449,7 @@ function api_register_account(): never
     $userId = (int)$pdo->lastInsertId();
     $token = api_issue_auth_token($userId, api_config());
 
-    $stmt = $pdo->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar, website_url, instagram_url, telegram_url, youtube_url FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     api_response(['success' => true, 'token' => $token, 'user' => api_public_user($stmt->fetch())], 201);
 }
@@ -600,6 +628,21 @@ function api_update_profile(): never
         }
         $sets[] = 'avatar_url = ?';
         $values[] = $avatar;
+    }
+
+    foreach ([
+        'websiteUrl' => 'website_url',
+        'instagramUrl' => 'instagram_url',
+        'telegramUrl' => 'telegram_url',
+        'youtubeUrl' => 'youtube_url',
+    ] as $inputKey => $column) {
+        if (!array_key_exists($inputKey, $data)) continue;
+        $url = trim((string)($data[$inputKey] ?? ''));
+        if ($url !== '' && (strlen($url) > 255 || !filter_var($url, FILTER_VALIDATE_URL) || strtolower((string)parse_url($url, PHP_URL_SCHEME)) !== 'https')) {
+            api_response(['error' => 'Profile links must be valid HTTPS URLs (or empty)'], 422);
+        }
+        $sets[] = $column . ' = ?';
+        $values[] = $url === '' ? null : $url;
     }
 
     if (array_key_exists('birthYear', $data) || array_key_exists('birth_year', $data)) {
@@ -1404,6 +1447,9 @@ try {
             break;
         case 'users/search':
             api_search_users();
+            break;
+        case 'users/profile':
+            api_get_user_profile();
             break;
         case 'conversations/direct':
             api_create_direct_conversation();

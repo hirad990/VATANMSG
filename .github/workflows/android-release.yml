@@ -29,11 +29,18 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Locate preinstalled Android SDK
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_HOME)) { $env:ANDROID_HOME = 'C:\\Android\\android-sdk' }
+          if (!(Test-Path $env:ANDROID_HOME)) { throw "Android SDK not found at $env:ANDROID_HOME" }
+          "ANDROID_HOME=$env:ANDROID_HOME" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install Android SDK components
         shell: pwsh
         run: |
-          sdkmanager.bat --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+          $sdk = Get-ChildItem "$env:ANDROID_HOME\\cmdline-tools" -Recurse -Filter "sdkmanager.bat" | Select-Object -First 1
+          if (!$sdk) { throw "sdkmanager.bat not found" }
+          & $sdk.FullName --install "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
           if ($LASTEXITCODE -ne 0) { throw "Android SDK install failed" }
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund

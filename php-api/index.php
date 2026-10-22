@@ -547,7 +547,7 @@ function api_upload_avatar(): never
     }
     $guard = $storageDir . '/.htaccess';
     if (!is_file($guard)) {
-        file_put_contents($guard, "Options -Indexes\n<FilesMatch \"\\.(php[0-9]?|phtml|phar|cgi|pl|sh)$\">\nRequire all denied\n</FilesMatch>\n");
+        file_put_contents($guard, implode(PHP_EOL, ['Options -Indexes', '<FilesMatch "\\.(php[0-9]?|phtml|phar|cgi|pl|sh)$">', 'Require all denied', '</FilesMatch>', '']));
     }
     $storedName = bin2hex(random_bytes(24)) . '.' . $extensions[$mime];
     $destination = $storageDir . '/' . $storedName;

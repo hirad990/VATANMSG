@@ -139,6 +139,8 @@ function AppContent() {
   const [fontsLoaded] = useFonts({ Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black });
   const heroMotion = useRef(new Animated.Value(0)).current;
   const tabMotion = useRef(new Animated.Value(1)).current;
+  const screenSlide = useRef(new Animated.Value(0)).current;
+  const navBounce = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
   const chatScale = useRef(new Animated.Value(0.96)).current;
   const chatOpacity = useRef(new Animated.Value(0)).current;
@@ -150,11 +152,19 @@ function AppContent() {
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [tab, setTab] = useState<Tab>('chats');
-  // Animate the outgoing screen before switching tabs; the tab effect animates the next screen in.
+  // Move screens horizontally, using the opposite direction for back navigation and RTL.
   const navigateToTab = (nextTab: Tab) => {
     if (nextTab === tab) return;
+    const order: Tab[] = ['chats', 'contacts', 'groups', 'channels', 'saved', 'settings'];
+    const forward = order.indexOf(nextTab) > order.indexOf(tab);
+    const direction = (forward ? 1 : -1) * (lang === 'fa' ? -1 : 1);
+    screenSlide.stopAnimation();
+    screenSlide.setValue(direction * Dimensions.get('window').width * 0.16);
     tabMotion.stopAnimation();
-    Animated.timing(tabMotion, { toValue: 0, duration: 145, useNativeDriver: true, easing: (t) => t * t * (3 - 2 * t) }).start(({ finished }) => {
+    navBounce.stopAnimation();
+    navBounce.setValue(0.78);
+    Animated.spring(navBounce, { toValue: 1, useNativeDriver: true, damping: 11, stiffness: 300, mass: 0.55 }).start();
+    Animated.timing(tabMotion, { toValue: 0, duration: 115, useNativeDriver: true, easing: (t) => t * t * (3 - 2 * t) }).start(({ finished }) => {
       if (finished) setTab(nextTab);
     });
   };
@@ -362,8 +372,11 @@ function AppContent() {
 
   useEffect(() => {
     tabMotion.setValue(0);
-    Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
-  }, [tab, tabMotion]);
+    Animated.parallel([
+      Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }),
+      Animated.spring(screenSlide, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 230, mass: 0.72 })
+    ]).start();
+  }, [tab, tabMotion, screenSlide]);
 
   useEffect(() => {
     const sequence = rooms.slice(0, 18).map(room => {
@@ -1420,7 +1433,7 @@ function AppContent() {
       </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView className="flex-1" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Animated.View style={{ opacity: tabMotion, transform: [{ translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }, { scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) }] }}>
+        <Animated.View style={{ opacity: tabMotion, transform: [{ translateX: screenSlide }, { translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [4, 0] }) }, { scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.992, 1] }) }] }}>
           {tab === 'chats' && renderHome()}
           {tab === 'contacts' && renderContacts()}
           {tab === 'groups' && renderCollection('group')}

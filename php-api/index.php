@@ -1540,8 +1540,24 @@ if ($method === 'OPTIONS') {
     exit;
 }
 
-$path = trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/', '/');
-$path = preg_replace('#^api/?#', '', $path);
+// Normalize the route across cPanel/Apache configurations. Depending on rewrite
+// settings REQUEST_URI may be /api/messages, /api/index.php/messages, or a
+// PATH_INFO URL. Also accept ?route=messages as a safe fallback for hosts where
+// rewrite rules are disabled.
+$uriPath = (string)(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/');
+$path = trim($uriPath, '/');
+$routeQuery = trim((string)($_GET['route'] ?? $_GET['r'] ?? ''), " /\\t\\n\\r\\0\\x0B");
+if ($routeQuery !== '') {
+    $path = $routeQuery;
+} else {
+    $scriptName = trim((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/');
+    $scriptDir = trim(str_replace('\\\\', '/', dirname('/' . $scriptName)), '/');
+    if ($scriptDir !== '' && ($path === $scriptDir || str_starts_with($path, $scriptDir . '/'))) {
+        $path = ltrim(substr($path, strlen($scriptDir)), '/');
+    }
+    $path = preg_replace('#^(?:api/?)#i', '', $path) ?? $path;
+    $path = preg_replace('#^index\\.php/?#i', '', $path) ?? $path;
+}
 $path = trim($path, '/');
 
 try {

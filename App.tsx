@@ -1412,7 +1412,7 @@ function AppContent() {
   }
 
   return (
-    <SafeAreaView className="flex-1" style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
         <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }, { translateX: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [-14, 18] }) }, { rotate: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: ['-5deg', '9deg'] }) }] }]} />

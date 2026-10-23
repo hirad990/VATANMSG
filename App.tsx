@@ -1,7 +1,7 @@
 /// <reference path="./nativewind-env.d.ts" />
 import './global.css';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, I18nManager, Image, Keyboard, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -144,6 +144,8 @@ function AppContent() {
   const chatTransition = useRef(new Animated.Value(0)).current;
   const chatScale = useRef(new Animated.Value(0.96)).current;
   const chatOpacity = useRef(new Animated.Value(0)).current;
+  const chatScrollRef = useRef<ScrollView | null>(null);
+  const stickToBottomRef = useRef(true);
   const ambientMotion = useRef(new Animated.Value(0)).current;
   const messagePop = useRef(new Animated.Value(1)).current;
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
@@ -218,6 +220,16 @@ function AppContent() {
   const [privacyPrefs, setPrivacyPrefs] = useState<VatanPrivacySettings>({ phone: 'nobody', profile: 'everyone', lastSeen: 'contacts', invites: 'contacts' });
   const [sessionsList, setSessionsList] = useState<VatanSession[]>([]);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+
+  useEffect(() => {
+    const scrollToLatest = () => {
+      if (modal !== 'chat') return;
+      stickToBottomRef.current = true;
+      requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true }));
+    };
+    const showSubscription = Keyboard.addListener('keyboardDidShow', scrollToLatest);
+    return () => showSubscription.remove();
+  }, [modal]);
 
   const t = COPY[lang];
   const tapFeedback = () => {
@@ -917,6 +929,7 @@ function AppContent() {
       setModal('login');
       return;
     }
+    stickToBottomRef.current = true;
     setActiveRoom(room);
     setMessages([]);
     setMessageDraft('');
@@ -1461,9 +1474,9 @@ function AppContent() {
       </View>
 
       <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => modal === 'chat' ? closeActiveChat() : setModal(null)}>
-        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+        <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
-          <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), opacity: chatOpacity, transform: [{ translateX: chatTransition }, { scale: chatScale }] }]}>
+          <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Platform.OS === 'android' ? 8 : Math.max(insets.bottom, 10), opacity: chatOpacity, transform: [{ translateX: chatTransition }, { scale: chatScale }] }]}>
             {modal !== 'chat' && <View style={[styles.modalHandle, { backgroundColor: c.border }]} />}
             <View style={[styles.modalHeader, { flexDirection: isRTL ? 'row-reverse' : 'row', marginBottom: modal === 'chat' ? 10 : 18, paddingHorizontal: modal === 'chat' ? 2 : 0, borderBottomWidth: modal === 'chat' ? StyleSheet.hairlineWidth : 0, borderBottomColor: c.border, paddingBottom: modal === 'chat' ? 10 : 0 }]}>
               {modal === 'chat' ? <View style={{ flex: 1, minWidth: 0, flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 10 }}>
@@ -1602,7 +1615,7 @@ function AppContent() {
                   <Pressable onPress={() => setSelectedMessageIds([])}><Ionicons name="close-circle-outline" size={20} color={c.muted} /></Pressable>
                 </View>
               </View>}
-              <ScrollView style={[styles.fullChatMessages, { backgroundColor: roomWallpapers[activeRoom?.id ?? ''] ?? 'transparent', borderRadius: 16 }]} contentContainerStyle={{ gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled">
+              <ScrollView ref={chatScrollRef} style={[styles.fullChatMessages, { backgroundColor: roomWallpapers[activeRoom?.id ?? ''] ?? 'transparent', borderRadius: 16 }]} contentContainerStyle={{ flexGrow: 1, gap: 12, paddingVertical: 14 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16} onScroll={event => { const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent; stickToBottomRef.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 120; }} onContentSizeChange={() => { if (stickToBottomRef.current) requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true })); }}>
                 {messages.length === 0 ? <Text style={[styles.demoNote, { color: c.muted, textAlign: 'center' }]}>{lang === 'fa' ? 'هنوز پیامی وجود ندارد. اولین پیام را بفرست.' : 'No messages yet. Send the first message.'}</Text> : messages.map(message => {
                   const mine = message.senderId === userId;
                   const reactions = messageReactions[message.id] ?? [];
@@ -1653,7 +1666,7 @@ function AppContent() {
                 <Pressable disabled={busy} onPress={() => { void pickDocumentForChat(); }} style={{ width: 34, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 }}><Ionicons name="attach-outline" size={23} color={c.primary} /></Pressable>
                 <View style={{ flex: 1 }}>
                   {!!messageDraft.trim() && !editingMessageId && <Text style={{ color: c.muted, fontSize: 9, marginBottom: 3, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'پیش‌نویس به‌صورت خودکار ذخیره می‌شود' : 'Draft saved automatically'}</Text>}
-                  <TextInput value={messageDraft} onChangeText={setMessageDraft} returnKeyType="send" blurOnSubmit={true} onSubmitEditing={() => { void submitMessage(); }} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیام…' : 'Message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, borderRadius: 23, textAlign: isRTL ? 'right' : 'left', maxHeight: 100, minHeight: 44, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 0 }]} />
+                  <TextInput value={messageDraft} onChangeText={setMessageDraft} onFocus={() => { stickToBottomRef.current = true; requestAnimationFrame(() => chatScrollRef.current?.scrollToEnd({ animated: true })); }} returnKeyType="send" blurOnSubmit={true} onSubmitEditing={() => { void submitMessage(); }} placeholder={editingMessageId ? (lang === 'fa' ? 'متن ویرایش‌شده…' : 'Edit message…') : (lang === 'fa' ? 'پیام…' : 'Message…')} placeholderTextColor={c.muted} multiline style={[styles.fieldInput, { color: c.text, backgroundColor: c.input, borderColor: c.border, borderRadius: 23, textAlign: isRTL ? 'right' : 'left', maxHeight: 100, minHeight: 44, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 0 }]} />
                 </View>
                 <Pressable disabled={!messageDraft.trim()} onPress={() => { void submitMessage(); }} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: messageDraft.trim() ? c.primary : c.soft, alignItems: 'center', justifyContent: 'center', opacity: messageDraft.trim() ? 1 : 0.72 }}><Ionicons name={editingMessageId ? 'checkmark' : 'send'} size={19} color={messageDraft.trim() ? '#FFF' : c.muted} /></Pressable>
               </View>

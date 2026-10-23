@@ -172,11 +172,16 @@ export async function uploadProfileAvatar(
   } else {
     form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
   }
-  const response = await fetch(apiUrl('/media/avatar-upload'), {
-    method: 'POST',
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-    body: form
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/media/avatar-upload'), {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: form
+    });
+  } catch {
+    throw new VatanApiError('Profile photo upload could not connect to the API. Check HTTPS/cPanel availability and upload limits.', 0);
+  }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new VatanApiError(payload.error || `Profile photo upload failed (${response.status}).`, response.status);
   if (typeof payload.avatarUrl !== 'string' || !payload.avatarUrl.startsWith('https://')) {
@@ -438,11 +443,16 @@ export async function uploadConversationAttachment(
   } else {
     form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
   }
-  const response = await fetch(apiUrl('/media/upload'), {
-    method: 'POST',
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
-    body: form
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/media/upload'), {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: form
+    });
+  } catch {
+    throw new VatanApiError('File upload could not connect to the API. Check HTTPS/cPanel availability and upload limits.', 0);
+  }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new VatanApiError(payload.error || `Upload failed (${response.status}).`, response.status);
   return { message: normalizeMessage(payload.message), attachment: payload.attachment as VatanAttachment };

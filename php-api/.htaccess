@@ -1,10 +1,13 @@
-Options -Indexes
+Options -Indexes -MultiViews
+DirectoryIndex index.php
 RewriteEngine On
 
-<FilesMatch "^(config\.php|config\.example\.php|schema\.sql|upgrade-existing\.sql|README\.md)$">
+<FilesMatch "^(config\.php|config\.example\.php|schema\.sql|upgrade-existing\.sql|upgrade-v2\.sql|upgrade-v2\.1\.sql|upgrade-v2\.2\.sql|README\.md)$">
     Require all denied
 </FilesMatch>
 
+# Normal API routes (kept for older app builds); the current app also supports
+# index.php?route=... so API routing still works if mod_rewrite is unavailable.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]

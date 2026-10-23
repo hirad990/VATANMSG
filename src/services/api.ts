@@ -71,7 +71,7 @@ async function request<T>(path: string, token?: string, init: RequestInit = {}):
       }
     });
   } catch {
-    throw new VatanApiError('Cannot reach https://binercraft.ir/api. Check hosting/API status and network.', 0);
+    throw new VatanApiError('Cannot connect to the Vatan API (https://binercraft.ir/api/index.php). Check the domain HTTPS certificate, cPanel availability, and that php-api files are deployed.', 0);
   }
 
   const payload = await response.json().catch(() => ({})) as { error?: string };

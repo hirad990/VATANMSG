@@ -3,7 +3,7 @@
     "name": "پیام‌رسان وطن",
     "slug": "vatanmsg",
     "scheme": "vatanmsg",
-    "version": "2.0.0",
+    "version": "2.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "ir.vatanmsg.app",
+      "versionCode": 22,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize"
     },

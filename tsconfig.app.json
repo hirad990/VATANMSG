@@ -7,7 +7,8 @@
   "include": [
     "App.tsx",
     "src/**/*.ts",
-    "src/**/*.tsx"
+    "src/**/*.tsx",
+    "nativewind-env.d.ts"
   ],
   "exclude": [
     "server",

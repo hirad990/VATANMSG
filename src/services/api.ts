@@ -146,6 +146,30 @@ export async function updateMyProfile(token: string, profile: {
   return normalizeUser(result);
 }
 
+/** Upload a profile image as multipart/form-data. Do not set Content-Type manually:
+ * fetch must add the multipart boundary for React Native's FormData body.
+ */
+export async function uploadProfilePhoto(token: string, uri: string): Promise<VatanUser> {
+  const filename = uri.split('/').pop()?.split('?')[0] || 'avatar.jpg';
+  const extension = filename.split('.').pop()?.toLowerCase();
+  const mimeType = extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg';
+  const form = new FormData();
+  form.append('file', { uri, name: filename, type: mimeType } as any);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/auth/avatar`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: form
+    });
+  } catch {
+    throw new VatanApiError('Could not upload profile photo. Check your connection and API hosting.', 0);
+  }
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new VatanApiError(payload.error || `Avatar upload failed (${response.status}).`, response.status);
+  return normalizeUser(payload);
+}
+
 export async function logout(token: string): Promise<void> {
   await request('/auth/logout', token, { method: 'POST', body: '{}' });
 }

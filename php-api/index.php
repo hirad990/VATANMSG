@@ -514,6 +514,59 @@ function api_get_me(): never
     api_response(['user' => api_public_user(api_user())]);
 }
 
+
+function api_upload_avatar(): never
+{
+    api_method('POST');
+    $user = api_user();
+    if (!isset($_FILES['file']) || !is_array($_FILES['file'])) {
+        api_response(['error' => 'Choose a profile photo to upload'], 422);
+    }
+    $file = $_FILES['file'];
+    $error = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($error !== UPLOAD_ERR_OK || !is_uploaded_file((string)($file['tmp_name'] ?? ''))) {
+        api_response(['error' => 'Photo upload failed. Check hosting upload limits and permissions.'], 400);
+    }
+    $size = (int)($file['size'] ?? 0);
+    if ($size < 1 || $size > 5 * 1024 * 1024) {
+        api_response(['error' => 'Profile photos must be 1 byte to 5 MB'], 413);
+    }
+    $tmp = (string)$file['tmp_name'];
+    $info = @getimagesize($tmp);
+    if ($info === false || empty($info['mime'])) {
+        api_response(['error' => 'The uploaded file is not a valid image'], 415);
+    }
+    $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $mime = (string)$info['mime'];
+    if (!isset($extensions[$mime])) {
+        api_response(['error' => 'Use a JPEG, PNG, or WebP profile photo'], 415);
+    }
+    $storageDir = __DIR__ . '/avatars';
+    if (!is_dir($storageDir) && !mkdir($storageDir, 0755, true) && !is_dir($storageDir)) {
+        api_response(['error' => 'Avatar storage is unavailable on the host'], 500);
+    }
+    $guard = $storageDir . '/.htaccess';
+    if (!is_file($guard)) {
+        file_put_contents($guard, "Options -Indexes\n<FilesMatch \"\\.(php[0-9]?|phtml|phar|cgi|pl|sh)$\">\nRequire all denied\n</FilesMatch>\n");
+    }
+    $storedName = bin2hex(random_bytes(24)) . '.' . $extensions[$mime];
+    $destination = $storageDir . '/' . $storedName;
+    if (!move_uploaded_file($tmp, $destination)) {
+        api_response(['error' => 'Could not save profile photo. Check folder permissions.'], 500);
+    }
+    @chmod($destination, 0644);
+    $avatarUrl = 'https://binercraft.ir/api/avatars/' . $storedName;
+    try {
+        api_db()->prepare('UPDATE users SET avatar_url = ? WHERE id = ?')->execute([$avatarUrl, $user['id']]);
+    } catch (Throwable $e) {
+        @unlink($destination);
+        throw $e;
+    }
+    $stmt = api_db()->prepare('SELECT id, username, display_name, avatar_url, birth_year, birth_calendar FROM users WHERE id = ?');
+    $stmt->execute([$user['id']]);
+    api_response(['success' => true, 'user' => api_public_user($stmt->fetch())]);
+}
+
 function api_update_profile(): never
 {
     api_method('PATCH', 'POST');
@@ -1330,6 +1383,9 @@ try {
             break;
         case 'auth/profile':
             api_update_profile();
+            break;
+        case 'auth/avatar':
+            api_upload_avatar();
             break;
         case 'auth/logout':
             api_logout();

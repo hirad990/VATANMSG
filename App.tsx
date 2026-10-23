@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
+import { Alert, Animated, Dimensions, Easing, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -12,7 +12,7 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts, Vazirmatn_400Regular, Vazirmatn_500Medium, Vazirmatn_600SemiBold, Vazirmatn_700Bold, Vazirmatn_800ExtraBold, Vazirmatn_900Black } from '@expo-google-fonts/vazirmatn';
-import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
+import { addConversationMember, createChannel, createDirectConversation, createGroup, deleteConversation, deleteMessage, editMessage, getConversationMembers, getConversationSettings, getMessages, getMyProfile, leaveConversation, listConversations, searchConversationMessages, loginWithPassword, logout as logoutFromApi, markMessagesRead, registerAccount, removeConversationMember, registerPushDevice, searchUsers, sendMessage, setConversationMemberRole, toggleMessageReaction, transferConversationOwnership, logoutAllSessions, uploadConversationAttachment, updateConversationSettings, updateMyProfile, uploadProfilePhoto, type VatanGroupSettings, type VatanMember, type VatanMessage, type VatanUser } from './src/services/api';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
@@ -139,6 +139,7 @@ function AppContent() {
   const tabMotion = useRef(new Animated.Value(1)).current;
   const chatTransition = useRef(new Animated.Value(0)).current;
   const roomPressScales = useRef<Record<string, Animated.Value>>({}).current;
+  const roomEntranceValues = useRef<Record<string, Animated.Value>>({}).current;
   const [lang, setLang] = useState<Language>('fa');
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -328,6 +329,16 @@ function AppContent() {
     tabMotion.setValue(0);
     Animated.spring(tabMotion, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 220, mass: 0.7 }).start();
   }, [tab, tabMotion]);
+
+  useEffect(() => {
+    const sequence = rooms.slice(0, 18).map(room => {
+      const value = roomEntranceValues[room.id] ?? (roomEntranceValues[room.id] = new Animated.Value(0));
+      value.stopAnimation();
+      value.setValue(0);
+      return Animated.spring(value, { toValue: 1, useNativeDriver: true, damping: 19, stiffness: 180, mass: 0.72 });
+    });
+    if (sequence.length) Animated.stagger(34, sequence).start();
+  }, [tab, rooms.length]);
 
   // Refresh conversation membership so newly invited group members see the room.
   useEffect(() => {
@@ -565,12 +576,20 @@ function AppContent() {
     }
     setBusy(true);
     try {
+      // Upload a newly selected local image first. Remote URLs are already saved avatars.
+      let savedAvatarUrl = photo;
+      if (photo && !/^https:\/\//i.test(photo)) {
+        const uploadedUser = await uploadProfilePhoto(apiToken, photo);
+        savedAvatarUrl = uploadedUser.avatarUrl;
+      }
       const user = await updateMyProfile(apiToken, {
         displayName: displayName.trim(),
         username: username.trim(),
         birthYear: parsedYear,
-        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian'
+        birthCalendar: calendar === 'solar' ? 'solar_hijri' : 'gregorian',
+        ...(savedAvatarUrl !== undefined ? { avatarUrl: savedAvatarUrl } : {})
       });
+      setPhoto(user.avatarUrl);
       setDisplayName(user.displayName);
       setUsername(user.username);
       setBirthYear(user.birthYear == null ? '' : String(user.birthYear));
@@ -778,6 +797,18 @@ function AppContent() {
     }
   };
 
+  const closeModalAnimated = () => {
+    if (modal === 'chat') {
+      const width = Dimensions.get('window').width;
+      Animated.timing(chatTransition, { toValue: isRTL ? width : -width, duration: 230, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => {
+        setModal(null);
+        chatTransition.setValue(0);
+      });
+      return;
+    }
+    setModal(null);
+  };
+
   const uploadFileToRoom = async (file: { uri: string; name: string; type: string }) => {
     if (!apiToken || !activeRoom) return;
     setBusy(true);
@@ -961,8 +992,9 @@ function AppContent() {
   const renderRoom = (room: Room) => {
     const pinned = pinnedRoomIds.includes(room.id);
     const pressScale = roomPressScales[room.id] ?? (roomPressScales[room.id] = new Animated.Value(1));
-    const animatePress = (toValue: number) => Animated.spring(pressScale, { toValue, useNativeDriver: true, speed: 30, bounciness: 5 }).start();
-    return <Animated.View key={room.id} style={{ transform: [{ scale: pressScale }] }}><Pressable onPress={() => openRoom(room)} onPressIn={() => animatePress(0.975)} onPressOut={() => animatePress(1)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
+    const entrance = roomEntranceValues[room.id] ?? (roomEntranceValues[room.id] = new Animated.Value(0));
+    const animatePress = (toValue: number) => Animated.spring(pressScale, { toValue, useNativeDriver: true, speed: 30, bounciness: 7 }).start();
+    return <Animated.View key={room.id} style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }, { scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.975, 1] }) }, { scale: pressScale }] }}><Pressable onPress={() => openRoom(room)} onPressIn={() => animatePress(0.975)} onPressOut={() => animatePress(1)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
       style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, paddingHorizontal: 8, borderRadius: 16, backgroundColor: pinned ? c.soft + '66' : 'transparent' }]}>
       <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} uri={room.avatarUrl} />
       <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
@@ -1237,7 +1269,7 @@ function AppContent() {
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
         <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }] }]} />
-        <View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03 }]} />
+        <Animated.View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03, transform: [{ translateY: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]} />
       </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1263,7 +1295,7 @@ function AppContent() {
         })}
       </View>
 
-      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType={modal === 'chat' ? 'none' : 'slide'} onRequestClose={() => setModal(null)}>
+      <Modal visible={modal !== null} transparent={modal !== 'chat'} animationType="none" onRequestClose={closeModalAnimated}>
         <KeyboardAvoidingView style={[styles.modalBackdrop, modal === 'chat' && { backgroundColor: c.bg, justifyContent: 'flex-start' }]} behavior="padding" keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
           {modal !== 'chat' && <Pressable style={styles.modalDismiss} onPress={() => setModal(null)} />}
           <Animated.View style={[styles.modalSheet, { backgroundColor: c.surface }, modal === 'chat' && styles.fullChatSheet, modal === 'chat' && { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 10), transform: [{ translateX: chatTransition }] }]}>
@@ -1273,7 +1305,7 @@ function AppContent() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 {modal === 'chat' && <Pressable onPress={() => { setMessageSearchQuery(''); setMessageSearchResults([]); setModal('searchMessages'); }}><Ionicons name="search-outline" size={22} color={c.primary} /></Pressable>}
                 {modal === 'chat' && activeRoom && activeRoom.kind !== 'direct' && <Pressable onPress={() => { void openGroupSettings(); }}><Ionicons name="settings-outline" size={22} color={c.primary} /></Pressable>}
-                <Pressable onPress={() => setModal(null)}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
+                <Pressable onPress={closeModalAnimated}><Ionicons name="close" size={24} color={c.muted} /></Pressable>
               </View>
             </View>
             {modal === 'forward' ? <>

@@ -1,6 +1,11 @@
 Options -Indexes
 RewriteEngine On
 
+# Profile photos are public image assets; block script execution in this folder.
+<IfModule mod_rewrite.c>
+RewriteRule ^avatars/ - [L]
+</IfModule>
+
 <FilesMatch "^(config\.php|config\.example\.php|schema\.sql|upgrade-existing\.sql|README\.md)$">
     Require all denied
 </FilesMatch>

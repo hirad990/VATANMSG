@@ -1383,7 +1383,9 @@ function api_upload_media(): never
     $mime = (string)$finfo->file((string)$file['tmp_name']);
     $extensions = [
         'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif',
-        'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov',
+        'video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov', 'video/3gpp' => '3gp',
+        'audio/mpeg' => 'mp3', 'audio/mp4' => 'm4a', 'audio/aac' => 'aac', 'audio/ogg' => 'ogg',
+        'audio/wav' => 'wav', 'audio/x-wav' => 'wav', 'audio/webm' => 'weba', 'audio/3gpp' => '3gp',
         'application/pdf' => 'pdf', 'text/plain' => 'txt', 'application/zip' => 'zip',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
@@ -1444,7 +1446,10 @@ function api_download_media(): never
     header('Content-Type: ' . $attachment['mime_type']);
     header('Content-Length: ' . (string)$attachment['size_bytes']);
     header('X-Content-Type-Options: nosniff');
-    header('Content-Disposition: attachment; filename="' . str_replace(['"', "\\", "\r", "\n"], '_', (string)$attachment['original_name']) . '"');
+    $safeName = str_replace(['"', "\\", "\r", "\n"], '_', (string)$attachment['original_name']);
+    $inlineTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime', 'video/3gpp', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/3gpp'];
+    $disposition = in_array((string)$attachment['mime_type'], $inlineTypes, true) ? 'inline' : 'attachment';
+    header('Content-Disposition: ' . $disposition . '; filename="' . $safeName . '"');
     readfile($path);
     exit;
 }

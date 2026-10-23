@@ -1098,21 +1098,54 @@ function AppContent() {
     const pressScale = roomPressScales[room.id] ?? (roomPressScales[room.id] = new Animated.Value(1));
     const entrance = roomEntranceValues[room.id] ?? (roomEntranceValues[room.id] = new Animated.Value(0));
     const animatePress = (toValue: number) => Animated.spring(pressScale, { toValue, useNativeDriver: true, speed: 30, bounciness: 7 }).start();
-    return <Animated.View key={room.id} style={{ opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }, { scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.975, 1] }) }, { scale: pressScale }] }><Pressable onPress={() => openRoom(room)} onPressIn={() => animatePress(0.975)} onPressOut={() => animatePress(1)} onLongPress={() => togglePinnedRoom(room)} delayLongPress={420}
-      style={[styles.chatRow, { flexDirection: isRTL ? 'row-reverse' : 'row', borderBottomColor: c.border, paddingHorizontal: 8, borderRadius: 16, backgroundColor: pinned ? c.soft + '66' : 'transparent' }]}>
-      <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} uri={room.avatarUrl} />
-      <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-        <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
-          <Text numberOfLines={1} style={[styles.chatTitle, { color: c.text, flexShrink: 1 }]}>{room.title}</Text>
-          {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
+    return (
+      <Animated.View
+        key={room.id}
+        style={{
+          opacity: entrance,
+          transform: [
+            { translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+            { scale: entrance.interpolate({ inputRange: [0, 1], outputRange: [0.975, 1] }) },
+            { scale: pressScale }
+          ]
+        }}
+      >
+        <View style={[styles.chatRow, {
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          borderBottomColor: c.border,
+          paddingHorizontal: 8,
+          borderRadius: 16,
+          backgroundColor: pinned ? c.soft + '66' : 'transparent'
+        }]}>
+          <Pressable
+            onPress={() => openRoom(room)}
+            onPressIn={() => animatePress(0.975)}
+            onPressOut={() => animatePress(1)}
+            onLongPress={() => togglePinnedRoom(room)}
+            delayLongPress={420}
+            style={{ flex: 1, minWidth: 0, flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 10 }}
+          >
+            <Avatar icon={room.icon} color={room.kind === 'group' ? '#10B981' : room.kind === 'channel' ? '#2878E8' : c.primary} size={52} uri={room.avatarUrl} />
+            <View style={[styles.chatInfo, { alignItems: isRTL ? 'flex-end' : 'flex-start', flex: 1, minWidth: 0 }]}>
+              <View style={{ flexDirection: isRTL ? 'row-reverse' : 'row', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
+                <Text numberOfLines={1} style={[styles.chatTitle, { color: c.text, flexShrink: 1 }]}>{room.title}</Text>
+                {pinned && <Ionicons name="pin" size={12} color={c.primary} />}
+              </View>
+              <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
+            onPress={() => togglePinnedRoom(room)}
+            hitSlop={8}
+            style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}
+          >
+            <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={17} color={pinned ? c.primary : c.muted} />
+          </Pressable>
         </View>
-        <Text numberOfLines={1} style={[styles.chatSubtitle, { color: c.muted }]}>{room.subtitle}</Text>
-      </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={pinned ? (lang === 'fa' ? 'برداشتن سنجاق گفتگو' : 'Unpin conversation') : (lang === 'fa' ? 'سنجاق کردن گفتگو' : 'Pin conversation')}
-        onPress={() => togglePinnedRoom(room)} hitSlop={8} style={{ padding: 7, borderRadius: 12, backgroundColor: pinned ? c.primary + '18' : 'transparent' }}>
-        <Ionicons name={pinned ? 'pin' : 'pin-outline'} size={17} color={pinned ? c.primary : c.muted} />
-      </Pressable>
-    </Pressable></Animated.View>;
+      </Animated.View>
+    );
   };
 
   const renderHome = () => {

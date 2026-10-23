@@ -249,7 +249,24 @@ ALTER TABLE user_privacy_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP 
 UPDATE users SET username = CONCAT('user_', id) WHERE username IS NULL OR TRIM(username) = '';
 UPDATE users SET display_name = COALESCE(NULLIF(TRIM(display_name), ''), username, CONCAT('User ', id)) WHERE display_name IS NULL OR TRIM(display_name) = '';
 UPDATE conversations SET type = 'group' WHERE type IS NULL OR type NOT IN ('private','group','channel');
+UPDATE conversation_members SET role = 'member' WHERE role IS NULL OR role NOT IN ('owner','admin','member','subscriber');
 UPDATE messages SET body = '' WHERE body IS NULL;
+
+-- Normalize older enum definitions so channels/subscribers work after repair.
+ALTER TABLE conversations MODIFY COLUMN type VARCHAR(24) NOT NULL DEFAULT 'group';
+UPDATE conversations SET type = 'group' WHERE type IS NULL OR type NOT IN ('private','group','channel');
+ALTER TABLE conversations MODIFY COLUMN type ENUM('private','group','channel') NOT NULL DEFAULT 'group';
+ALTER TABLE conversation_members MODIFY COLUMN role VARCHAR(24) NOT NULL DEFAULT 'member';
+UPDATE conversation_members SET role = 'member' WHERE role IS NULL OR role NOT IN ('owner','admin','member','subscriber');
+ALTER TABLE conversation_members MODIFY COLUMN role ENUM('owner','admin','member','subscriber') NOT NULL DEFAULT 'member';
+
+-- Normalize legacy birth-calendar labels before applying the current enum.
+ALTER TABLE users MODIFY COLUMN birth_calendar VARCHAR(20) NULL;
+UPDATE users SET birth_calendar = 'solar_hijri' WHERE LOWER(birth_calendar) IN ('solar','jalali','shamsi','solar_hijri');
+UPDATE users SET birth_calendar = 'gregorian' WHERE LOWER(birth_calendar) IN ('gregorian','miladi');
+UPDATE users SET birth_calendar = NULL WHERE birth_calendar IS NOT NULL AND birth_calendar NOT IN ('solar_hijri','gregorian');
+ALTER TABLE users MODIFY COLUMN birth_calendar ENUM('solar_hijri','gregorian') NULL;
+
 INSERT IGNORE INTO conversation_settings (conversation_id) SELECT id FROM conversations;
 INSERT IGNORE INTO user_privacy_settings (user_id) SELECT id FROM users;
 

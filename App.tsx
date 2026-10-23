@@ -148,6 +148,14 @@ function AppContent() {
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [tab, setTab] = useState<Tab>('chats');
+  // Animate the outgoing screen before switching tabs; the tab effect animates the next screen in.
+  const navigateToTab = (nextTab: Tab) => {
+    if (nextTab === tab) return;
+    tabMotion.stopAnimation();
+    Animated.timing(tabMotion, { toValue: 0, duration: 110, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) setTab(nextTab);
+    });
+  };
   const [displayName, setDisplayName] = useState('هیراد');
   const [username, setUsername] = useState('hirad');
   const [birthYear, setBirthYear] = useState('');
@@ -620,7 +628,7 @@ function AppContent() {
       setRoomDescription('');
       setChannelId('');
       setModal(null);
-      setTab(conversation.kind === 'channel' ? 'channels' : 'groups');
+      navigateToTab(conversation.kind === 'channel' ? 'channels' : 'groups');
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Could not create conversation.');
     } finally {
@@ -688,7 +696,7 @@ function AppContent() {
       const conversation = (await createDirectConversation(apiToken, person.username)).conversation;
       const room: Room = { id: conversation.id, title: conversation.title || person.displayName, subtitle: '@' + person.username, icon: 'person', kind: 'direct', avatarUrl: person.avatarUrl };
       setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
-      setTab('chats'); setActiveRoom(room); setMessages([]); setMessageDraft(''); setModal('chat');
+      navigateToTab('chats'); setActiveRoom(room); setMessages([]); setMessageDraft(''); setModal('chat');
     } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not start chat.'); }
     finally { setBusy(false); }
   };
@@ -748,7 +756,7 @@ function AppContent() {
     try {
       await leaveConversation(apiToken, activeRoom.id);
       setRooms(previous => previous.filter(room => room.id !== activeRoom.id));
-      setTab('groups');
+      navigateToTab('groups');
       closeActiveChat();
     } catch (error) {
       showAlert(error instanceof Error ? error.message : 'Could not leave group.');
@@ -842,7 +850,7 @@ function AppContent() {
             await joinConversation(apiToken, target.id);
             const room: Room = { id: target.id, title: target.title, subtitle: target.description || (lang === 'fa' ? 'کانال' : 'Channel'), icon: 'megaphone', kind: 'channel', avatarUrl: target.avatarUrl ?? null };
             setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
-            setTab('channels');
+            navigateToTab('channels');
             openRoom(room);
           } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not open channel.'); }
         })();
@@ -1087,7 +1095,7 @@ function AppContent() {
   const SectionTitle = ({ title, action }: { title: string; action?: string }) => (
     <View style={[styles.sectionRow, { flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
       <Text style={[styles.sectionTitle, { color: c.text }]}>{title}</Text>
-      {!!action && <Pressable onPress={() => setTab('chats')}><Text style={{ color: c.primary, fontWeight: '700' }}>{action}</Text></Pressable>}
+      {!!action && <Pressable onPress={() => navigateToTab('chats')}><Text style={{ color: c.primary, fontWeight: '700' }}>{action}</Text></Pressable>}
     </View>
   );
 
@@ -1164,7 +1172,7 @@ function AppContent() {
           <Text style={[styles.inboxTitle, { color: c.text, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'گفت‌وگوها' : 'Messages'}</Text>
           <Text style={[styles.inboxSubtitle, { color: c.muted, textAlign: isRTL ? 'right' : 'left' }]}>{lang === 'fa' ? 'همه ارتباطاتت، مرتب و یک‌جا' : 'Every conversation, neatly in one place'}</Text>
         </View>
-        <Pressable onPress={() => { tapFeedback(); setTab('contacts'); }} style={[styles.newChatFab, { backgroundColor: c.primary }]} accessibilityRole="button">
+        <Pressable onPress={() => { tapFeedback(); navigateToTab('contacts'); }} style={[styles.newChatFab, { backgroundColor: c.primary }]} accessibilityRole="button">
           <Ionicons name="create-outline" size={22} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -1218,7 +1226,7 @@ function AppContent() {
           <View style={[styles.emptyIllustration, { backgroundColor: c.soft }]}><Ionicons name={search ? 'search-outline' : chatFilter === 'pinned' ? 'pin-outline' : 'chatbubbles-outline'} size={28} color={c.primary} /></View>
           <Text style={{ color: c.text, fontSize: 14, fontWeight: '900', marginTop: 12 }}>{search ? (lang === 'fa' ? 'چیزی پیدا نشد' : 'No matches found') : chatFilter === 'pinned' ? (lang === 'fa' ? 'هنوز گفت‌وگویی سنجاق نکردی' : 'No pinned chats yet') : t.emptyTitle}</Text>
           <Text style={{ color: c.muted, fontSize: 11, textAlign: 'center', lineHeight: 18, marginTop: 5 }}>{search ? (lang === 'fa' ? 'عبارت دیگری را امتحان کن.' : 'Try another search term.') : chatFilter === 'pinned' ? (lang === 'fa' ? 'با زدن سنجاق کنار هر گفتگو، آن را اینجا نگه دار.' : 'Tap the pin beside a chat to keep it here.') : t.emptyBody}</Text>
-          {!search && chatFilter === 'all' && <Pressable onPress={() => setTab('contacts')} style={[styles.primaryButton, { backgroundColor: c.primary, marginTop: 14 }]}><Ionicons name="person-add-outline" size={16} color="#FFFFFF" /><Text style={styles.primaryButtonText}>{lang === 'fa' ? 'پیدا کردن مخاطب' : 'Find people'}</Text></Pressable>}
+          {!search && chatFilter === 'all' && <Pressable onPress={() => navigateToTab('contacts')} style={[styles.primaryButton, { backgroundColor: c.primary, marginTop: 14 }]}><Ionicons name="person-add-outline" size={16} color="#FFFFFF" /><Text style={styles.primaryButtonText}>{lang === 'fa' ? 'پیدا کردن مخاطب' : 'Find people'}</Text></Pressable>}
         </View>}
       </View>
       <Text style={[styles.inboxHint, { color: c.muted }]}>{lang === 'fa' ? 'برای سنجاق یا برداشتن سنجاق، دکمهٔ سنجاق کنار گفتگو را بزن.' : 'Use the pin beside a chat to keep it at the top.'}</Text>
@@ -1423,7 +1431,7 @@ function AppContent() {
         <BlurView intensity={dark ? 45 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         {navItems.map(item => {
           const active = tab === item.key;
-          return <Pressable key={item.key} onPress={() => { tapFeedback(); setTab(item.key); }} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
+          return <Pressable key={item.key} onPress={() => { tapFeedback(); navigateToTab(item.key); }} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
             <Animated.View style={[styles.navIconWrap, active && { backgroundColor: c.soft, borderColor: c.primary + '44', borderWidth: 1 }, active && { transform: [{ scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }] }]}>
               <Ionicons name={active ? item.active : item.icon} size={21} color={active ? c.primary : c.muted} />
             </Animated.View>
@@ -1578,7 +1586,7 @@ function AppContent() {
                         {!!message.replyToId && <Text style={{ color: c.muted, fontSize: 10, marginBottom: 4 }}>↪ {lang === 'fa' ? 'در پاسخ به پیام' : 'Replying to a message'}</Text>}
                         <Text style={{ color: c.text, fontSize: 13 }}>{message.body}</Text>
                         {(message.attachments ?? []).map(file => <Pressable key={file.id} onPress={() => { void openAttachment(file.url, file.name); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, padding: 8, borderRadius: 10, backgroundColor: c.surface, marginTop: 7 }}>
-                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : 'document-outline'} size={22} color={c.primary} />}
+                          {file.mimeType.startsWith('image/') ? <Pressable onPress={() => setImageViewerUri(file.url)}><Image source={{ uri: file.url, headers: apiToken ? { Authorization: `Bearer ${apiToken}` } : undefined }} style={{ width: 76, height: 76, borderRadius: 10 }} resizeMode="cover" /></Pressable> : <Ionicons name={file.mimeType.startsWith('video/') ? 'videocam-outline' : file.mimeType.startsWith('audio/') ? 'musical-notes-outline' : 'document-outline'} size={22} color={c.primary} />}
                           <View style={{ flex: 1 }}><Text style={{ color: c.text, fontSize: 11 }} numberOfLines={1}>{file.name}</Text><Text style={{ color: c.muted, fontSize: 9 }}>{Math.max(1, Math.round(file.sizeBytes / 1024))} KB</Text></View>
                           <Ionicons name="download-outline" size={17} color={c.primary} />
                         </Pressable>)}

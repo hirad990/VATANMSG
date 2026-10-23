@@ -39,7 +39,17 @@ export type VatanMessage = {
 
 type AuthResponse = { token: string; user: VatanUser };
 
-const API_BASE_URL = 'https://binercraft.ir/api';
+// Call index.php with a route query instead of relying on Apache mod_rewrite.
+ // This works on cPanel even when .htaccess rewrites are disabled or overridden.
+const API_BASE_URL = 'https://binercraft.ir/api/index.php';
+
+function apiUrl(path: string): string {
+  const normalized = path.replace(/^\\/+/, '');
+  const queryAt = normalized.indexOf('?');
+  const route = queryAt < 0 ? normalized : normalized.slice(0, queryAt);
+  const query = queryAt < 0 ? '' : normalized.slice(queryAt + 1);
+  return `${API_BASE_URL}?route=${encodeURIComponent(route)}${query ? `&${query}` : ''}`;
+}
 
 export class VatanApiError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -51,7 +61,7 @@ export class VatanApiError extends Error {
 async function request<T>(path: string, token?: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(apiUrl(path), {
       ...init,
       headers: {
         Accept: 'application/json',
@@ -162,7 +172,7 @@ export async function uploadProfileAvatar(
   } else {
     form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
   }
-  const response = await fetch(`${API_BASE_URL}/media/avatar-upload`, {
+  const response = await fetch(apiUrl('/media/avatar-upload'), {
     method: 'POST',
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     body: form
@@ -428,7 +438,7 @@ export async function uploadConversationAttachment(
   } else {
     form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
   }
-  const response = await fetch(`${API_BASE_URL}/media/upload`, {
+  const response = await fetch(apiUrl('/media/upload'), {
     method: 'POST',
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     body: form

@@ -1,3 +1,4 @@
+import './global.css';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -152,7 +153,7 @@ function AppContent() {
   const navigateToTab = (nextTab: Tab) => {
     if (nextTab === tab) return;
     tabMotion.stopAnimation();
-    Animated.timing(tabMotion, { toValue: 0, duration: 110, useNativeDriver: true }).start(({ finished }) => {
+    Animated.timing(tabMotion, { toValue: 0, duration: 145, useNativeDriver: true, easing: (t) => t * t * (3 - 2 * t) }).start(({ finished }) => {
       if (finished) setTab(nextTab);
     });
   };
@@ -1380,7 +1381,7 @@ function AppContent() {
               <Text style={{ color: c.muted, fontSize: 10, fontWeight: '700' }}>{lang === 'fa' ? 'پیام‌رسان مستقل و امن' : 'Your independent messenger'}</Text>
             </View>
           </Animated.View>
-          <View style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 28, padding: 20, shadowColor: c.primary, shadowOpacity: dark ? 0.16 : 0.06, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 5 }}>
+          <View className="rounded-[28px] border p-5 shadow-2xl" style={{ backgroundColor: c.surface, borderColor: c.border, borderWidth: 1, borderRadius: 28, padding: 20, shadowColor: c.primary, shadowOpacity: dark ? 0.16 : 0.06, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 5 }}>
             <Text style={{ color: c.text, fontSize: 22, fontWeight: '900', textAlign: isRTL ? 'right' : 'left' }}>{loginMode === 'login' ? (lang === 'fa' ? 'خوش برگشتی 👋' : 'Welcome back 👋') : (lang === 'fa' ? 'به وطن بپیوند' : 'Join Vatan')}</Text>
             <Text style={{ color: c.muted, fontSize: 12, lineHeight: 19, marginTop: 6, marginBottom: 18, textAlign: isRTL ? 'right' : 'left' }}>{lang === 'fa' ? 'برای ادامه، وارد حساب شو یا حساب جدید بساز.' : 'Sign in or create an account to continue.'}</Text>
             <View style={[styles.authModeSwitch, { backgroundColor: c.input, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
@@ -1410,15 +1411,15 @@ function AppContent() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
+    <SafeAreaView className="flex-1" style={[styles.safe, { backgroundColor: c.bg }]} edges={['top', 'bottom', 'left', 'right']}>
       <StatusBar barStyle={dark ? 'light-content' : 'dark-content'} backgroundColor={c.bg} />
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
         <Animated.View style={[styles.ambientOrb, styles.ambientOrbTop, { backgroundColor: c.primary, opacity: dark ? 0.10 : 0.045, transform: [{ scale: heroMotion.interpolate({ inputRange: [0, 1], outputRange: [0.82, 1] }) }, { translateX: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [-14, 18] }) }, { rotate: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: ['-5deg', '9deg'] }) }] }]} />
         <Animated.View style={[styles.ambientOrb, styles.ambientOrbBottom, { backgroundColor: '#19B8D4', opacity: dark ? 0.045 : 0.03, transform: [{ translateY: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [12, -18] }) }, { translateX: ambientMotion.interpolate({ inputRange: [0, 1], outputRange: [8, -12] }) }] }]} />
       </View>
       <Header title={tab === 'chats' ? t.brand : labelForTab(tab)} subtitle={tab === 'chats' ? t.tagline : undefined} />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <Animated.View style={{ opacity: tabMotion, transform: [{ translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [9, 0] }) }] }}>
+      <ScrollView className="flex-1" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Animated.View style={{ opacity: tabMotion, transform: [{ translateY: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }, { scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] }) }] }}>
           {tab === 'chats' && renderHome()}
           {tab === 'contacts' && renderContacts()}
           {tab === 'groups' && renderCollection('group')}
@@ -1427,11 +1428,11 @@ function AppContent() {
           {tab === 'settings' && renderSettings()}
         </Animated.View>
       </ScrollView>
-      <View style={[styles.bottomNav, { backgroundColor: dark ? 'rgba(14,21,38,0.88)' : 'rgba(255,255,255,0.9)', borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
+      <View className="rounded-3xl border shadow-2xl" style={[styles.bottomNav, { backgroundColor: dark ? 'rgba(14,21,38,0.88)' : 'rgba(255,255,255,0.9)', borderColor: c.border, flexDirection: isRTL ? 'row-reverse' : 'row' }]}>
         <BlurView intensity={dark ? 45 : 65} tint={dark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
         {navItems.map(item => {
           const active = tab === item.key;
-          return <Pressable key={item.key} onPress={() => { tapFeedback(); navigateToTab(item.key); }} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
+          return <Pressable key={item.key} className="rounded-2xl" onPress={() => { tapFeedback(); navigateToTab(item.key); }} style={styles.navItem} android_ripple={{ color: c.soft, borderless: false }}>
             <Animated.View style={[styles.navIconWrap, active && { backgroundColor: c.soft, borderColor: c.primary + '44', borderWidth: 1 }, active && { transform: [{ scale: tabMotion.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) }] }]}>
               <Ionicons name={active ? item.active : item.icon} size={21} color={active ? c.primary : c.muted} />
             </Animated.View>

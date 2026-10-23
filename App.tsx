@@ -711,7 +711,11 @@ function AppContent() {
       const conversation = (await createDirectConversation(apiToken, person.username)).conversation;
       const room: Room = { id: conversation.id, title: conversation.title || person.displayName, subtitle: '@' + person.username, icon: 'person', kind: 'direct', avatarUrl: person.avatarUrl };
       setRooms(previous => [room, ...previous.filter(item => item.id !== room.id)]);
-      navigateToTab('chats'); setActiveRoom(room); setMessages([]); setMessageDraft(''); setModal('chat');
+      // Use the same chat-opening path as existing conversations. It initializes
+      // the slide/opacity animation and resets reply, edit, and message state;
+      // setting modal='chat' directly leaves chatOpacity at 0 and shows a blank screen.
+      navigateToTab('chats');
+      openRoom(room);
     } catch (error) { showAlert(error instanceof Error ? error.message : 'Could not start chat.'); }
     finally { setBusy(false); }
   };

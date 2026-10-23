@@ -1271,7 +1271,7 @@ function api_message_attachments(int $messageId): array
             'name' => $row['original_name'],
             'mimeType' => $row['mime_type'],
             'sizeBytes' => (int)$row['size_bytes'],
-            'url' => 'https://binercraft.ir/api/media/download?id=' . (string)$row['id'],
+            'url' => 'https://binercraft.ir/api/index.php?route=media%2Fdownload&id=' . (string)$row['id'],
             'createdAt' => $row['created_at']
         ];
     }
@@ -1551,7 +1551,7 @@ if ($routeQuery !== '') {
     $path = $routeQuery;
 } else {
     $scriptName = trim((string)($_SERVER['SCRIPT_NAME'] ?? ''), '/');
-    $scriptDir = trim(str_replace('\\\\', '/', dirname('/' . $scriptName)), '/');
+    $scriptDir = trim(str_replace('\\', '/', dirname('/' . $scriptName)), '/');
     if ($scriptDir !== '' && ($path === $scriptDir || str_starts_with($path, $scriptDir . '/'))) {
         $path = ltrim(substr($path, strlen($scriptDir)), '/');
     }

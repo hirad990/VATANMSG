@@ -1,3 +1,4 @@
+/// <reference types="nativewind/types" />
 import './global.css';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, I18nManager, Image, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, UIManager, ScrollView, StatusBar, StyleSheet, Switch, Text as NativeText, TextInput, View } from 'react-native';

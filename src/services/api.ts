@@ -57,23 +57,29 @@ function parseApiPath(path: string): ParsedApiPath {
 
 function apiUrl(path: string): string {
   const { route, query } = parseApiPath(path);
-  return `${API_BASE_URL}?route=${encodeURIComponent(route)}${query ? `&${query}` : ''}`;
+  // Keep route separators as literal slashes. Some cPanel/WAF configurations
+  // reject multipart POST requests when the route slash is percent-encoded.
+  const safeRoute = route.split('/').map(segment => encodeURIComponent(segment)).join('/');
+  return `${API_BASE_URL}?route=${safeRoute}${query ? `&${query}` : ''}`;
 }
 
-// Some cPanel deployments still have working Apache rewrites but an older
-// index.php router. Retry the same endpoint as /api/<route> only when the
-// query-router explicitly answers "Endpoint not found". Do not retry normal
-// resource 404s (for example, a missing message or attachment).
-async function fetchApi(path: string, init: RequestInit): Promise<Response> {
-  const response = await fetch(apiUrl(path), init);
+// Use the normal Apache route for multipart uploads first. This avoids WAF
+// rules that can reject encoded route separators on large POST requests. If
+// the rewrite route is not installed, fall back only on the explicit router
+// response "Endpoint not found"; never retry after a network error, since the
+// server may already have received an upload.
+async function fetchApi(path: string, init: RequestInit, preferRewrite = false): Promise<Response> {
+  const { route, query } = parseApiPath(path);
+  const rewriteUrl = `${API_REWRITE_BASE_URL}${route}${query ? `?${query}` : ''}`;
+  const queryUrl = apiUrl(path);
+  const firstUrl = preferRewrite ? rewriteUrl : queryUrl;
+  const secondUrl = preferRewrite ? queryUrl : rewriteUrl;
+  const response = await fetch(firstUrl, init);
   if (response.status !== 404) return response;
 
   const payload = await response.clone().json().catch(() => ({})) as { error?: string };
   if (payload.error !== 'Endpoint not found') return response;
-
-  const { route, query } = parseApiPath(path);
-  const rewriteUrl = `${API_REWRITE_BASE_URL}${route}${query ? `?${query}` : ''}`;
-  return fetch(rewriteUrl, init);
+  return fetch(secondUrl, init);
 }
 
 export class VatanApiError extends Error {
@@ -207,9 +213,9 @@ export async function uploadProfileAvatar(
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: form
-    });
+    }, true);
   } catch {
-    throw new VatanApiError('Profile photo upload could not connect to the API. Check HTTPS/cPanel availability and upload limits.', 0);
+    throw new VatanApiError('Profile photo upload could not connect to the API. Check that https://binercraft.ir/api/media/avatar-upload is reachable and that the cPanel HTTPS certificate is valid.', 0);
   }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new VatanApiError(payload.error || `Profile photo upload failed (${response.status}).`, response.status);
@@ -480,9 +486,9 @@ export async function uploadConversationAttachment(
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: form
-    });
+    }, true);
   } catch {
-    throw new VatanApiError('File upload could not connect to the API. Check HTTPS/cPanel availability and upload limits.', 0);
+    throw new VatanApiError('File upload could not connect to the API. Check that https://binercraft.ir/api/media/upload is reachable and that the cPanel HTTPS certificate is valid.', 0);
   }
   const payload = await response.json().catch(() => ({})) as any;
   if (!response.ok) throw new VatanApiError(payload.error || `Upload failed (${response.status}).`, response.status);

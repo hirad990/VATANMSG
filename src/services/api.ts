@@ -188,14 +188,18 @@ export async function uploadProfileAvatar(
   file: { uri: string; name: string; type: string }
 ): Promise<{ avatarUrl: string }> {
   const form = new FormData();
-  if (typeof window !== 'undefined') {
+  // React Native also defines globalThis.window. Do not use typeof window
+  // to detect the web runtime: fetching a file:// or content:// URI as a web
+  // URL causes "Network request failed" before the request reaches PHP.
+  const isWebUri = /^(blob:|https?:\/\/)/i.test(file.uri);
+  if (isWebUri) {
     const blob = await fetch(file.uri).then(response => {
       if (!response.ok) throw new Error('Could not read the selected profile photo.');
       return response.blob();
     });
     form.append('file', blob, file.name);
   } else {
-    form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+    form.append('file', { uri: file.uri, name: file.name, type: file.type || 'image/jpeg' } as any);
   }
   let response: Response;
   try {
@@ -459,14 +463,16 @@ export async function uploadConversationAttachment(
 ): Promise<{ message: VatanMessage; attachment: VatanAttachment }> {
   const form = new FormData();
   form.append('conversation_id', conversationId);
-  if (typeof window !== 'undefined') {
+  // Match the avatar uploader's runtime detection for React Native and web.
+  const isWebUri = /^(blob:|https?:\/\/)/i.test(file.uri);
+  if (isWebUri) {
     const blob = await fetch(file.uri).then(response => {
       if (!response.ok) throw new Error('Could not read the selected file.');
       return response.blob();
     });
     form.append('file', blob, file.name);
   } else {
-    form.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
+    form.append('file', { uri: file.uri, name: file.name, type: file.type || 'application/octet-stream' } as any);
   }
   let response: Response;
   try {

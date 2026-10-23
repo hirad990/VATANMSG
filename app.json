@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "ir.vatanmsg.app",
+      "versionCode": 22,
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize"
     },

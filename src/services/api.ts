@@ -42,13 +42,38 @@ type AuthResponse = { token: string; user: VatanUser };
 // Call index.php with a route query instead of relying on Apache mod_rewrite.
  // This works on cPanel even when .htaccess rewrites are disabled or overridden.
 const API_BASE_URL = 'https://binercraft.ir/api/index.php';
+const API_REWRITE_BASE_URL = 'https://binercraft.ir/api/';
 
-function apiUrl(path: string): string {
+type ParsedApiPath = { route: string; query: string };
+
+function parseApiPath(path: string): ParsedApiPath {
   const normalized = path.startsWith('/') ? path.slice(1) : path;
   const queryAt = normalized.indexOf('?');
-  const route = queryAt < 0 ? normalized : normalized.slice(0, queryAt);
-  const query = queryAt < 0 ? '' : normalized.slice(queryAt + 1);
+  return {
+    route: queryAt < 0 ? normalized : normalized.slice(0, queryAt),
+    query: queryAt < 0 ? '' : normalized.slice(queryAt + 1)
+  };
+}
+
+function apiUrl(path: string): string {
+  const { route, query } = parseApiPath(path);
   return `${API_BASE_URL}?route=${encodeURIComponent(route)}${query ? `&${query}` : ''}`;
+}
+
+// Some cPanel deployments still have working Apache rewrites but an older
+// index.php router. Retry the same endpoint as /api/<route> only when the
+// query-router explicitly answers "Endpoint not found". Do not retry normal
+// resource 404s (for example, a missing message or attachment).
+async function fetchApi(path: string, init: RequestInit): Promise<Response> {
+  const response = await fetch(apiUrl(path), init);
+  if (response.status !== 404) return response;
+
+  const payload = await response.clone().json().catch(() => ({})) as { error?: string };
+  if (payload.error !== 'Endpoint not found') return response;
+
+  const { route, query } = parseApiPath(path);
+  const rewriteUrl = `${API_REWRITE_BASE_URL}${route}${query ? `?${query}` : ''}`;
+  return fetch(rewriteUrl, init);
 }
 
 export class VatanApiError extends Error {
@@ -61,7 +86,7 @@ export class VatanApiError extends Error {
 async function request<T>(path: string, token?: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(apiUrl(path), {
+    response = await fetchApi(path, {
       ...init,
       headers: {
         Accept: 'application/json',
@@ -174,7 +199,7 @@ export async function uploadProfileAvatar(
   }
   let response: Response;
   try {
-    response = await fetch(apiUrl('/media/avatar-upload'), {
+    response = await fetchApi('/media/avatar-upload', {
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: form
@@ -445,7 +470,7 @@ export async function uploadConversationAttachment(
   }
   let response: Response;
   try {
-    response = await fetch(apiUrl('/media/upload'), {
+    response = await fetchApi('/media/upload', {
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: form

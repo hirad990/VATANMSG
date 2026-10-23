@@ -44,7 +44,7 @@ type AuthResponse = { token: string; user: VatanUser };
 const API_BASE_URL = 'https://binercraft.ir/api/index.php';
 
 function apiUrl(path: string): string {
-  const normalized = path.replace(/^\\/+/, '');
+  const normalized = path.startsWith('/') ? path.slice(1) : path;
   const queryAt = normalized.indexOf('?');
   const route = queryAt < 0 ? normalized : normalized.slice(0, queryAt);
   const query = queryAt < 0 ? '' : normalized.slice(queryAt + 1);

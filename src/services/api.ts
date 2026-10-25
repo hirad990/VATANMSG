@@ -189,6 +189,28 @@ export async function updateMyProfile(token: string, profile: {
   return normalizeUser(result);
 }
 
+export async function uploadConversationAvatar(token: string, conversationId: string, file: { uri: string; name: string; type: string }): Promise<{ avatarUrl: string }> {
+  const form = new FormData();
+  form.append('conversation_id', conversationId);
+  const isWebUri = /^(blob:|https?:\/\/)/i.test(file.uri);
+  if (isWebUri) {
+    const blob = await fetch(file.uri).then(response => { if (!response.ok) throw new Error('Could not read the selected image.'); return response.blob(); });
+    form.append('file', blob, file.name);
+  } else {
+    form.append('file', { uri: file.uri, name: file.name, type: file.type || 'image/jpeg' } as any);
+  }
+  let response: Response;
+  try {
+    response = await fetchApi('/media/conversation-avatar-upload', { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, body: form }, true);
+  } catch {
+    throw new VatanApiError('Group photo upload could not connect to the API. Check the PHP API deployment and HTTPS certificate.', 0);
+  }
+  const payload = await response.json().catch(() => ({})) as any;
+  if (!response.ok) throw new VatanApiError(payload.error || `Group photo upload failed (${response.status}).`, response.status);
+  if (typeof payload.avatarUrl !== 'string' || !payload.avatarUrl.startsWith('https://')) throw new VatanApiError('The server did not return a valid group photo URL.', 500);
+  return { avatarUrl: payload.avatarUrl };
+}
+
 export async function uploadProfileAvatar(
   token: string,
   file: { uri: string; name: string; type: string }
@@ -287,6 +309,12 @@ export async function resolveIdentifier(token: string, query: string): Promise<V
   };
 }
 
+export async function getUserPublicProfile(token: string, username: string): Promise<VatanPublicProfile> {
+  const result = await request<any>(`/users/profile?username=${encodeURIComponent(username)}`, token);
+  const user = normalizeUser(result.user);
+  return { ...user, phoneNumber: typeof result.phoneNumber === 'string' ? result.phoneNumber : null };
+}
+
 export async function searchUsers(token: string, query: string): Promise<{ users: VatanUser[] }> {
   const result = await request<{ users: any[] }>(`/users/search?q=${encodeURIComponent(query)}`, token);
   return {
@@ -368,6 +396,8 @@ export type VatanGroupSettings = {
   slowModeSeconds: number;
   showSignatures: boolean;
 };
+
+export type VatanPublicProfile = VatanUser & { phoneNumber: string | null };
 
 export type VatanMember = VatanUser & { role: 'owner' | 'admin' | 'member' | 'subscriber' };
 

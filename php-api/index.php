@@ -75,6 +75,29 @@ function api_search_users(): never
     api_response(['users' => $users]);
 }
 
+function api_get_user_profile(): never
+{
+    api_method('GET');
+    $viewer = api_user();
+    $username = trim((string)($_GET['username'] ?? ''));
+    if (!preg_match('/^[A-Za-z0-9_]{3,32}$/', $username)) api_response(['error' => 'Valid username required'], 422);
+    $stmt = api_db()->prepare(
+        "SELECT u.id, u.username, u.display_name, u.avatar_url, u.birth_year, u.birth_calendar, u.phone_e164,
+                COALESCE(ps.phone_visibility, 'nobody') AS phone_visibility,
+                COALESCE(ps.profile_visibility, 'everyone') AS profile_visibility
+         FROM users u LEFT JOIN user_privacy_settings ps ON ps.user_id = u.id
+         WHERE u.username = ? LIMIT 1"
+    );
+    $stmt->execute([$username]);
+    $target = $stmt->fetch();
+    if (!$target) api_response(['error' => 'User not found'], 404);
+    $isSelf = (int)$target['id'] === (int)$viewer['id'];
+    // Contacts-only stays private until the app has a verifiable contacts list.
+    if (!$isSelf && $target['profile_visibility'] !== 'everyone') api_response(['error' => 'This profile is not public'], 404);
+    $phone = ($isSelf || $target['phone_visibility'] === 'everyone') ? ($target['phone_e164'] ?: null) : null;
+    api_response(['user' => api_public_user($target), 'phoneNumber' => $phone]);
+}
+
 function api_resolve_identifier(): never
 {
     api_method('GET');
@@ -1349,6 +1372,48 @@ function api_upload_profile_avatar(): never
     api_response(['success' => true, 'avatarUrl' => $avatarUrl, 'user' => api_public_user($updatedUser)]);
 }
 
+function api_upload_conversation_avatar(): never
+{
+    api_method('POST');
+    $user = api_user();
+    $conversationId = filter_var($_POST['conversation_id'] ?? null, FILTER_VALIDATE_INT);
+    if (!$conversationId || $conversationId < 1) api_response(['error' => 'Valid conversation_id required'], 422);
+    $membership = api_require_membership((int)$conversationId, (int)$user['id']);
+    if (!in_array($membership['role'], ['owner', 'admin'], true) || $membership['type'] === 'private') {
+        api_response(['error' => 'Only group/channel owners and admins can change the photo'], 403);
+    }
+    if (!isset($_FILES['file']) || !is_array($_FILES['file'])) api_response(['error' => 'Choose a group or channel photo'], 422);
+    $file = $_FILES['file'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) api_response(['error' => 'Photo upload failed. Check the hosting upload size limit.'], 400);
+    $size = (int)($file['size'] ?? 0);
+    if ($size < 1 || $size > 5 * 1024 * 1024) api_response(['error' => 'Group photos must be 5 MB or smaller'], 413);
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $mime = (string)(new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']);
+    $imageInfo = @getimagesize((string)$file['tmp_name']);
+    if (!isset($allowed[$mime]) || !$imageInfo || ($imageInfo['mime'] ?? '') !== $mime) api_response(['error' => 'Use a valid JPG, PNG, or WEBP image'], 415);
+    if ((int)($imageInfo[0] ?? 0) > 6000 || (int)($imageInfo[1] ?? 0) > 6000) api_response(['error' => 'Photo dimensions are too large'], 413);
+    $storageDir = dirname(__DIR__) . '/uploads/conversation-avatars';
+    if (!is_dir($storageDir) && !mkdir($storageDir, 0755, true) && !is_dir($storageDir)) api_response(['error' => 'Group photo storage is unavailable on the host'], 500);
+    $rules = $storageDir . '/.htaccess';
+    if (!is_file($rules)) {
+        $rulesContent = 'Options -Indexes' . "\n" . '<FilesMatch "\\.(php|phtml|phar|cgi|pl|py|sh)$">' . "\n" . 'Require all denied' . "\n" . '</FilesMatch>' . "\n";
+        file_put_contents($rules, $rulesContent);
+    }
+    $storedName = bin2hex(random_bytes(24)) . '.' . $allowed[$mime];
+    $destination = $storageDir . '/' . $storedName;
+    if (!move_uploaded_file((string)$file['tmp_name'], $destination)) api_response(['error' => 'Could not save the group photo on the server'], 500);
+    @chmod($destination, 0644);
+    $avatarUrl = 'https://binercraft.ir/uploads/conversation-avatars/' . $storedName;
+    try {
+        $stmt = api_db()->prepare('UPDATE conversations SET avatar_url = ? WHERE id = ?');
+        $stmt->execute([$avatarUrl, $conversationId]);
+    } catch (Throwable $e) {
+        @unlink($destination);
+        throw $e;
+    }
+    api_response(['success' => true, 'avatarUrl' => $avatarUrl]);
+}
+
 function api_upload_media(): never
 {
     api_method('POST');
@@ -1612,6 +1677,9 @@ try {
         case 'resolve':
             api_resolve_identifier();
             break;
+        case 'users/profile':
+            api_get_user_profile();
+            break;
         case 'conversations/direct':
             api_create_direct_conversation();
             break;
@@ -1641,6 +1709,9 @@ try {
             break;
         case 'media/avatar-upload':
             api_upload_profile_avatar();
+            break;
+        case 'media/conversation-avatar-upload':
+            api_upload_conversation_avatar();
             break;
         case 'media/upload':
             api_upload_media();

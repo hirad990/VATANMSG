@@ -201,7 +201,7 @@ export async function uploadConversationAvatar(token: string, conversationId: st
   }
   let response: Response;
   try {
-    response = await fetchApi('/media/conversation-avatar-upload', { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, body: form }, true);
+    response = await fetchApi('/media/conversation-avatar-upload', { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }, body: form });
   } catch {
     throw new VatanApiError('Group photo upload could not connect to the API. Check the PHP API deployment and HTTPS certificate.', 0);
   }
